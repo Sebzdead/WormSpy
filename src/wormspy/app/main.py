@@ -95,9 +95,13 @@ def build(argv: list[str]) -> App:
         raise SystemExit("Hardware mode needs the PySpin camera adapter, which is not "
                          "implemented yet. Run with --sim for the simulated rig.")
     from PySide6.QtGui import QAction  # Qt only once we know we are building a UI
+    from PySide6.QtWidgets import QApplication
 
+    from wormspy.ui import theme
     from wormspy.ui.bridge import StateBridge
     from wormspy.ui.main_window import MainWindow, StatusInfo
+
+    theme.apply(QApplication.instance())
 
     config = load_config(args.config)          # a missing file means all defaults
     store, hub = StateStore(AppState()), FrameHub()
@@ -115,7 +119,7 @@ def build(argv: list[str]) -> App:
     window = MainWindow(StateBridge(store), hub, left=("brightfield", "Brightfield"),
                         right=("gcamp", "Fluorescence"), status=status,
                         overlay=executor.tracking_overlay)
-    window.setWindowTitle("WormsPy (simulated rig)")
+    window.setWindowTitle("WormsPy — simulated rig")
     slide = QAction("Calibration slide under the objective", window, checkable=True)
     slide.toggled.connect(lambda on: setattr(rig.rig, "target", bool(on)))
     window.menuBar().addMenu("Simulator").addAction(slide)

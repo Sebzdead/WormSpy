@@ -25,11 +25,13 @@ from PySide6.QtWidgets import (
 )
 
 from wormspy.core.frames import FrameHub
+from wormspy.ui import theme
 
 pg.setConfigOptions(imageAxisOrder="row-major", antialias=True)
 
 LUTS = ("grey", "inferno", "viridis", "magma", "plasma", "thermal", "flame")
-MASK_RGBA = (60, 220, 60, 90)
+MASK_RGBA = (57, 255, 90, 60)          # the WormsPy green, faint
+DEFAULT_ASPECT = 1920 / 1200
 
 
 class LiveView(QWidget):
@@ -49,49 +51,79 @@ class LiveView(QWidget):
         self.mask_visible = False
         self.lut_name = "grey"
 
-        self._canvas = pg.GraphicsLayoutWidget()
-        self._viewbox = self._canvas.addViewBox(lockAspect=True, invertY=True)
+        # The canvas is sized by the main window to exactly the camera's aspect ratio, so the
+        # image fills it edge to edge with no letterboxing.
+        self.canvas = pg.GraphicsLayoutWidget()
+        self.canvas.setBackground(theme.FEED_BACKGROUND)
+        self.canvas.ci.setContentsMargins(0, 0, 0, 0)
+        self._viewbox = self.canvas.addViewBox(lockAspect=True, invertY=True)
         self._viewbox.setMenuEnabled(False)
+        self._viewbox.setDefaultPadding(0)
         self.image_item = pg.ImageItem()
         self._mask_item = pg.ImageItem()
         self._mask_item.setVisible(False)
-        self._point_item = pg.ScatterPlotItem(size=14, symbol="x", pen=pg.mkPen("r", width=2),
-                                              brush=None)
-        self._cross_h = pg.InfiniteLine(angle=0, pen=pg.mkPen((255, 200, 0, 140)))
-        self._cross_v = pg.InfiniteLine(angle=90, pen=pg.mkPen((255, 200, 0, 140)))
-        for item in (self.image_item, self._mask_item, self._point_item, self._cross_h,
-                     self._cross_v):
+        # v1's green tracking dot, kept as the tracked-point marker
+        self._point_item = pg.ScatterPlotItem(size=11, symbol="o", pen=pg.mkPen("#0a0a0a", width=1),
+                                              brush=pg.mkBrush(theme.ACCENT))
+        crosshair = pg.mkPen((57, 255, 90, 70), width=1)
+        self._cross_h = pg.InfiniteLine(angle=0, pen=crosshair)
+        self._cross_v = pg.InfiniteLine(angle=90, pen=crosshair)
+        for item in (self.image_item, self._mask_item, self._cross_h, self._cross_v,
+                     self._point_item):
             self._viewbox.addItem(item)
-        self._canvas.scene().sigMouseClicked.connect(self._on_click)
+        self.canvas.scene().sigMouseClicked.connect(self._on_click)
 
         self._histogram = pg.HistogramLUTWidget(orientation="horizontal")
         self._histogram.setImageItem(self.image_item)
-        self._histogram.setMaximumHeight(90)
+        self._histogram.setBackground(theme.GROUND)
+        self._histogram.item.plot.setBrush((57, 255, 90, 60))
+        self._histogram.item.plot.setPen((57, 255, 90, 160))
+        self._histogram.item.region.setBrush((57, 255, 90, 22))
+        for line in self._histogram.item.region.lines:
+            line.setPen(pg.mkPen((57, 255, 90, 150), width=1))
+        self._histogram.setFixedHeight(84)
 
         self.saturation_label = QLabel("")
-        self.saturation_label.setStyleSheet("color: #ff5050; font-weight: bold;")
+        self.saturation_label.setStyleSheet(f"color: {theme.RED}; font-weight: 700;")
         auto = QPushButton("Auto levels")
         auto.clicked.connect(self.auto_levels)
         self._lut_box = QComboBox()
         self._lut_box.addItems(LUTS)
         self._lut_box.currentTextChanged.connect(self.set_lut)
-        self.mask_checkbox = QCheckBox("Threshold mask")
+        self.mask_checkbox = QCheckBox("Mask")
+        self.mask_checkbox.setToolTip("Show the tracking threshold mask")
         self.mask_checkbox.toggled.connect(self.show_mask)
 
-        header = QHBoxLayout()
-        name = QLabel(title)
-        name.setStyleSheet("font-weight: bold;")
-        header.addWidget(name)
-        header.addStretch(1)
-        header.addWidget(self.saturation_label)
-        header.addWidget(self.mask_checkbox)
-        header.addWidget(self._lut_box)
-        header.addWidget(auto)
+        self._toolbar = QWidget()
+        toolbar = QHBoxLayout(self._toolbar)
+        toolbar.setContentsMargins(2, 4, 2, 0)
+        name = QLabel(title.upper())
+        name.setStyleSheet(f"color: {theme.MUTED}; font-weight: 700; letter-spacing: 1px;")
+        toolbar.addWidget(name)
+        toolbar.addWidget(self.saturation_label)
+        toolbar.addStretch(1)
+        toolbar.addWidget(self.mask_checkbox)
+        toolbar.addWidget(self._lut_box)
+        toolbar.addWidget(auto)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.addLayout(header)
-        layout.addWidget(self._canvas, 1)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.addWidget(self.canvas)
+        layout.addWidget(self._toolbar)
         layout.addWidget(self._histogram)
+
+    @property
+    def aspect(self) -> float:
+        """Width / height of the camera image (the canvas is kept at exactly this)."""
+        if self.image is None:
+            return DEFAULT_ASPECT
+        height, width = self.image.shape[:2]
+        return width / height
+
+    def chrome_height(self) -> int:
+        """Height of everything below the canvas (toolbar + histogram + spacing)."""
+        spacing = self.layout().spacing()
+        return self._toolbar.sizeHint().height() + self._histogram.height() + 2 * spacing
 
     # --- frames ------------------------------------------------------------------------------
 

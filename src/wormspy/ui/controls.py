@@ -6,9 +6,11 @@ state and label, so the panel always shows what the state machine says, never a 
 
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -21,17 +23,18 @@ from PySide6.QtWidgets import (
 
 from wormspy.control import AppState, Mode, TrackingStatus
 from wormspy.control import commands as C
+from wormspy.ui import theme
 from wormspy.ui.bridge import StateBridge
 
 ESTIMATORS = (("dark_object", "Brightfield silhouette", "behaviour"),
               ("bright_marker", "Fluorescent marker", "fluorescence"))
 SOURCES = (("behaviour", "Brightfield camera"), ("fluorescence", "Fluorescence camera"))
 TRACKING_TEXT = {
-    TrackingStatus.OFF: ("Off", "#9a9a9a"),
-    TrackingStatus.TRACKING: ("Tracking", "#3fbf5f"),
-    TrackingStatus.LOST: ("Target lost", "#ff5050"),
+    TrackingStatus.OFF: ("Off", "#858b85"),
+    TrackingStatus.TRACKING: ("Tracking", "#39ff5a"),
+    TrackingStatus.LOST: ("Target lost", "#ff4d4d"),
     TrackingStatus.OVERRIDE: ("Joystick override", "#f0b040"),
-    TrackingStatus.LIMIT: ("At stage limit", "#ff8c30"),
+    TrackingStatus.LIMIT: ("At stage limit", "#f0b040"),
 }
 
 
@@ -40,51 +43,66 @@ class ControlPanel(QWidget):
         super().__init__()
         self._bridge = bridge
         self._state = bridge.state
-        layout = QVBoxLayout(self)
+        layout = QHBoxLayout(self)          # one row of cards below the feeds
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
-        # live
+        # session (and the live switch: nothing happens before the camera runs)
+        session = QGroupBox("SESSION")
+        grid = QGridLayout(session)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
         self.live_button = QPushButton("Start live")
+        self.live_button.setProperty("role", "primary")
         self.live_button.clicked.connect(self._toggle_live)
-        layout.addWidget(self.live_button)
-
-        # session
-        session = QGroupBox("Session")
-        form = QFormLayout(session)
         self.animal_id, self.operator, self.condition = QLineEdit(), QLineEdit(), QLineEdit()
+        self.animal_id.setPlaceholderText("e.g. N2 #3")
         self.notes = QPlainTextEdit()
-        self.notes.setMaximumHeight(60)
-        form.addRow("Animal / strain", self.animal_id)
-        form.addRow("Operator", self.operator)
-        form.addRow("Condition", self.condition)
-        form.addRow("Notes", self.notes)
+        self.notes.setFixedHeight(28)
+        self.notes.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.notes.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.new_session_button = QPushButton("New session")
         self.new_session_button.clicked.connect(self._new_session)
         self.session_label = QLabel()
-        form.addRow(self.new_session_button)
-        form.addRow(self.session_label)
-        layout.addWidget(session)
+        self.session_label.setObjectName("muted")
+        grid.addWidget(self.live_button, 0, 0, 1, 4)
+        for row, col, text, field in ((1, 0, "Animal", self.animal_id),
+                                      (1, 2, "Operator", self.operator),
+                                      (2, 0, "Condition", self.condition),
+                                      (2, 2, "Notes", self.notes)):
+            label = QLabel(text)
+            label.setObjectName("muted")
+            grid.addWidget(label, row, col)
+            grid.addWidget(field, row, col + 1)
+        grid.addWidget(self.new_session_button, 3, 0, 1, 2)
+        grid.addWidget(self.session_label, 3, 2, 1, 2)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
+        layout.addWidget(session, 3)
 
         # recording
-        recording = QGroupBox("Recording")
+        recording = QGroupBox("RECORDING")
         rec_layout = QVBoxLayout(recording)
         self.record_button = QPushButton()
         self.record_button.clicked.connect(lambda: bridge.dispatch(C.ToggleRecording()))
         self.recording_label = QLabel()
-        marker_row = QHBoxLayout()
+        self.recording_label.setFont(theme.mono_font())
         self.event_label = QLineEdit()
         self.event_label.setPlaceholderText("event label")
         self.mark_button = QPushButton("Mark event")
         self.mark_button.clicked.connect(
             lambda: bridge.dispatch(C.MarkEvent(label=self.event_label.text() or "marker")))
-        marker_row.addWidget(self.event_label)
+        marker_row = QHBoxLayout()
+        marker_row.addWidget(self.event_label, 1)
         marker_row.addWidget(self.mark_button)
         rec_layout.addWidget(self.record_button)
         rec_layout.addWidget(self.recording_label)
         rec_layout.addLayout(marker_row)
-        layout.addWidget(recording)
+        rec_layout.addStretch(1)
+        layout.addWidget(recording, 2)
 
         # tracking
-        tracking = QGroupBox("Tracking")
+        tracking = QGroupBox("TRACKING")
         trk = QFormLayout(tracking)
         self.estimator_box = QComboBox()
         for key, label, _source in ESTIMATORS:
@@ -95,39 +113,40 @@ class ControlPanel(QWidget):
         self.estimator_box.currentIndexChanged.connect(self._estimator_chosen)
         self.source_box.currentIndexChanged.connect(self._source_chosen)
         self.track_button = QPushButton()
+        self.track_button.setProperty("role", "primary")
         self.track_button.clicked.connect(lambda: bridge.dispatch(C.ToggleTracking()))
         self.tracking_label = QLabel()
-        trk.addRow("Estimator", self.estimator_box)
+        trk.addRow("Target", self.estimator_box)
         trk.addRow("Camera", self.source_box)
         trk.addRow(self.track_button)
         trk.addRow("Status", self.tracking_label)
-        layout.addWidget(tracking)
+        layout.addWidget(tracking, 2)
 
-        # focus
-        focus = QGroupBox("Focus")
-        foc = QVBoxLayout(focus)
-        row = QHBoxLayout()
+        # focus and calibration: both about where the stage is
+        stage = QGroupBox("FOCUS && CALIBRATION")
+        stg = QVBoxLayout(stage)
+        focus_row = QHBoxLayout()
         self.set_focus_button = QPushButton("Set focus")
         self.set_focus_button.clicked.connect(lambda: bridge.dispatch(C.SetFocus()))
         self.return_focus_button = QPushButton("Return to focus")
         self.return_focus_button.clicked.connect(lambda: bridge.dispatch(C.ReturnToFocus()))
-        row.addWidget(self.set_focus_button)
-        row.addWidget(self.return_focus_button)
+        focus_row.addWidget(self.set_focus_button)
+        focus_row.addWidget(self.return_focus_button)
         self.focus_label = QLabel()
-        foc.addLayout(row)
-        foc.addWidget(self.focus_label)
-        layout.addWidget(focus)
-
-        # calibration
-        calibration = QGroupBox("Stage calibration")
-        cal = QVBoxLayout(calibration)
-        self.calibrate_button = QPushButton("Calibrate (bead slide in focus)")
+        self.focus_label.setObjectName("muted")
+        self.calibrate_button = QPushButton("Calibrate stage")
+        self.calibrate_button.setToolTip("Needs a bead or grid slide in focus under the objective")
         self.calibrate_button.clicked.connect(lambda: bridge.dispatch(C.Calibrate()))
         self.calibration_label = QLabel()
-        cal.addWidget(self.calibrate_button)
-        cal.addWidget(self.calibration_label)
-        layout.addWidget(calibration)
-        layout.addStretch(1)
+        self.calibration_label.setObjectName("muted")
+        stg.addLayout(focus_row)
+        stg.addWidget(self.focus_label)
+        calibration_row = QHBoxLayout()
+        calibration_row.addWidget(self.calibrate_button)
+        calibration_row.addWidget(self.calibration_label, 1)
+        stg.addLayout(calibration_row)
+        stg.addStretch(1)
+        layout.addWidget(stage, 2)
 
         bridge.state_changed.connect(self.render)
         self.render(bridge.state)
@@ -168,6 +187,8 @@ class ControlPanel(QWidget):
         self.session_label.setText(Path(s.session_dir).name if s.session_dir else "No session")
 
         self.record_button.setText("■ Stop recording" if recording else "● Record")
+        self.record_button.setProperty("role", "danger" if recording else "primary")
+        theme.repolish(self.record_button)
         self.record_button.setEnabled(recording or (s.mode is Mode.LIVE and s.session_dir is not None
                                                     and not busy))
         self.recording_label.setText(f"{s.recording_name} · {s.recording_drops} dropped"

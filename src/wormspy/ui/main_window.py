@@ -11,20 +11,19 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QDockWidget,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QPushButton,
-    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
-from wormspy.control import AppState
+from wormspy.control import AppState, Mode, TrackingStatus
 from wormspy.control import commands as C
 from wormspy.core.frames import FrameHub
+from wormspy.ui import theme
 from wormspy.ui.bridge import StateBridge
 from wormspy.ui.controls import ControlPanel
 from wormspy.ui.live_view import LiveView
@@ -42,8 +41,9 @@ class AlarmBar(QFrame):
     def __init__(self, bridge: StateBridge) -> None:
         super().__init__()
         self._bridge = bridge
-        self.setStyleSheet("AlarmBar { background: #5a1a1a; border-radius: 4px; }"
-                           "QLabel { color: white; font-weight: bold; }")
+        self.setStyleSheet(f"AlarmBar {{ background: #3a1414; border: 1px solid #7a2a2a;"
+                           f" border-radius: 6px; }} QLabel {{ color: {theme.RED};"
+                           " font-weight: 600; }")
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(6, 4, 6, 4)
         self._rows: list[tuple[QLabel, QPushButton]] = []
@@ -75,6 +75,68 @@ class AlarmBar(QFrame):
         return [button for _, button in self._rows]
 
 
+MARGIN = 12
+FEED_GAP = 10
+
+
+class Header(QWidget):
+    """The WormsPy wordmark, mode chips and live readouts, in one slim bar."""
+
+    def __init__(self, bridge: StateBridge) -> None:
+        super().__init__()
+        self.wordmark = QLabel("WormsPy")
+        self.wordmark.setStyleSheet(f"color: {theme.ACCENT}; font-size: 26px; font-weight: 800;"
+                                    "letter-spacing: -0.5px;")
+        version = QLabel("v2")
+        version.setObjectName("muted")
+        self.mode_chip, self.rec_chip, self.tracking_chip = (QLabel() for _ in range(3))
+        for chip in (self.mode_chip, self.rec_chip, self.tracking_chip):
+            chip.setObjectName("chip")
+        self.xyz_label, self.fps_label, self.disk_label = (QLabel() for _ in range(3))
+        for label in (self.xyz_label, self.fps_label, self.disk_label):
+            label.setObjectName("readout")
+            label.setFont(theme.mono_font())
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        row.addWidget(self.wordmark)
+        row.addWidget(version, 0, Qt.AlignmentFlag.AlignBottom)
+        row.addSpacing(14)
+        row.addWidget(self.mode_chip)
+        row.addWidget(self.rec_chip)
+        row.addWidget(self.tracking_chip)
+        row.addStretch(1)
+        row.addWidget(self.xyz_label)
+        row.addSpacing(14)
+        row.addWidget(self.fps_label)
+        row.addSpacing(14)
+        row.addWidget(self.disk_label)
+        bridge.state_changed.connect(self.render)
+        self.render(bridge.state)
+
+    def render(self, s: AppState) -> None:
+        mode = {Mode.IDLE: ("IDLE", ""), Mode.LIVE: ("LIVE", "live"),
+                Mode.RECORDING: ("LIVE", "live")}[s.mode]
+        self._chip(self.mode_chip, *mode)
+        self.rec_chip.setVisible(s.mode is Mode.RECORDING)
+        if s.mode is Mode.RECORDING:
+            drops = f" · {s.recording_drops} dropped" if s.recording_drops else ""
+            self._chip(self.rec_chip, f"● REC {s.recording_name}{drops}", "rec")
+        tracking = {TrackingStatus.TRACKING: ("TRACKING", "live"),
+                    TrackingStatus.LOST: ("TARGET LOST", "rec"),
+                    TrackingStatus.OVERRIDE: ("JOYSTICK", "warn"),
+                    TrackingStatus.LIMIT: ("STAGE LIMIT", "warn")}.get(s.tracking)
+        self.tracking_chip.setVisible(tracking is not None)
+        if tracking:
+            self._chip(self.tracking_chip, *tracking)
+
+    @staticmethod
+    def _chip(chip: QLabel, text: str, tone: str) -> None:
+        chip.setText(text)
+        chip.setProperty("tone", tone)
+        theme.repolish(chip)
+
+
 class MainWindow(QMainWindow):
     closing = Signal()          # emitted when the operator closes the window: shut down cleanly
 
@@ -96,28 +158,31 @@ class MainWindow(QMainWindow):
                 lambda x, y, channel=view.channel:
                 bridge.dispatch(C.CentreOn(channel=channel, x_px=x, y_px=y)))
 
+        self.header = Header(bridge)
+        self.xyz_label = self.header.xyz_label
+        self.fps_label = self.header.fps_label
+        self.disk_label = self.header.disk_label
         self.alarm_bar = AlarmBar(bridge)
-        views = QHBoxLayout()
-        views.addWidget(self.left_view, 1)
-        views.addWidget(self.right_view, 1)
-        central = QWidget()
-        column = QVBoxLayout(central)
-        column.addWidget(self.alarm_bar)
-        column.addLayout(views, 1)
-        self.setCentralWidget(central)
-
         self.controls = ControlPanel(bridge)
-        scroll = QScrollArea()
-        scroll.setWidget(self.controls)
-        scroll.setWidgetResizable(True)
-        dock = QDockWidget("Controls")
-        dock.setWidget(scroll)
-        dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
 
-        self.xyz_label, self.fps_label, self.disk_label = QLabel(), QLabel(), QLabel()
-        for label in (self.xyz_label, self.fps_label, self.disk_label):
-            self.statusBar().addPermanentWidget(label)
+        feeds = QHBoxLayout()
+        feeds.setSpacing(FEED_GAP)
+        feeds.addStretch(1)
+        feeds.addWidget(self.left_view)
+        feeds.addWidget(self.right_view)
+        feeds.addStretch(1)
+        central = QWidget()
+        central.setObjectName("central")
+        self._column = QVBoxLayout(central)
+        self._column.setContentsMargins(MARGIN, 6, MARGIN, MARGIN)
+        self._column.setSpacing(8)
+        self._column.addWidget(self.header)
+        self._column.addWidget(self.alarm_bar)
+        self._column.addLayout(feeds)
+        self._column.addWidget(self.controls)
+        self._column.addStretch(1)
+        self.setCentralWidget(central)
+        self._fitted_for = None
         bridge.rejected.connect(lambda reason: self.statusBar().showMessage(reason, 6000))
 
         self._timer = QTimer(self)
@@ -129,8 +194,41 @@ class MainWindow(QMainWindow):
             if view.refresh():
                 self._rates[view.channel].append((view.frame.device_frame_id,
                                                   view.frame.capture_ts))
+        self._fit_feeds()
         self._draw_overlay()
         self._draw_status()
+
+    # --- feed geometry --------------------------------------------------------------------
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_feeds(force=True)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._fit_feeds(force=True)
+
+    def _fit_feeds(self, force: bool = False) -> None:
+        """Size both feeds to exactly their camera aspect, as large as the window allows:
+        the full width if there is height to spare, otherwise the height left over after the
+        header, alarms, view toolbars and control cards."""
+        central = self.centralWidget()
+        key = (central.width(), central.height(), self.alarm_bar.isHidden(),
+               tuple(view.aspect for view in self._views))
+        if key == self._fitted_for and not force:
+            return
+        self._fitted_for = key
+        width = central.width() - 2 * MARGIN - FEED_GAP
+        spacing = self._column.spacing()
+        others = (self.header.sizeHint().height() + self.controls.sizeHint().height()
+                  + (0 if self.alarm_bar.isHidden() else self.alarm_bar.sizeHint().height())
+                  + max(view.chrome_height() for view in self._views)
+                  + 6 + MARGIN + 4 * spacing)
+        height_left = central.height() - others
+        aspects = [view.aspect for view in self._views]
+        h = max(60, min(width / sum(aspects), height_left))
+        for view, aspect in zip(self._views, aspects, strict=True):
+            view.canvas.setFixedSize(int(h * aspect), int(h))
 
     def _draw_overlay(self) -> None:
         overlay = self._overlay()
