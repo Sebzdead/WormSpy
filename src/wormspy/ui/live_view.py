@@ -39,6 +39,7 @@ class LiveView(QWidget):
         self._hub = hub
         self.channel = channel
         self.image: np.ndarray | None = None
+        self.frame = None                     # the Frame currently displayed
         self._frame_id: int | None = None
         self._levelled = False
         self.saturated_fraction = 0.0
@@ -99,6 +100,7 @@ class LiveView(QWidget):
         if frame is None or frame.device_frame_id == self._frame_id:
             return False
         self._frame_id = frame.device_frame_id
+        self.frame = frame
         first = self.image is None or self.image.shape != frame.image.shape
         self.image = frame.image
         self.image_item.setImage(self.image, autoLevels=False)

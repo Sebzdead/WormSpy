@@ -232,6 +232,13 @@ class Executor:
             log=self._log_tracking, override=self._override)
         self._tracker.start()
 
+    def tracking_overlay(self):
+        """(source channel, latest Estimate) while tracking, for the UI overlay; else None."""
+        tracker = self._tracker
+        if tracker is None or tracker.last_estimate is None:
+            return None
+        return tracker.source_channel, tracker.last_estimate
+
     def _stop_tracker(self) -> None:
         tracker, self._tracker = self._tracker, None
         if tracker is not None:

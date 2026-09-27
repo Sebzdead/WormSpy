@@ -122,3 +122,11 @@ def test_stopping_the_tracker_stops_the_stage():
     loop.run(3.0)
     loop.tracker.stop()
     assert loop.stage.velocity_um_s("x") == 0.0 and loop.stage.velocity_um_s("y") == 0.0
+
+
+def test_the_latest_estimate_is_available_for_the_display_overlay():
+    loop = Loop()
+    assert loop.tracker.last_estimate is None
+    loop.run(1.0)
+    estimate = loop.tracker.last_estimate
+    assert estimate is not None and estimate.point_px is not None and estimate.mask is not None

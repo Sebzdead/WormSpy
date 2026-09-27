@@ -49,6 +49,8 @@ class Tracker:
         self._last_t: float | None = None
         self._sent: dict[str, float | None] = {"x": None, "y": None}
         self.status: TrackingStatus | None = None
+        self.last_estimate = None          # newest Estimate, for the display overlay
+        self.source_channel = source_channel
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -99,6 +101,7 @@ class Tracker:
             return
         self._last_frame_id = frame.device_frame_id
         estimate = self._estimator(frame.image)
+        self.last_estimate = estimate
         world = None
         if estimate.point_px is not None:
             sample = self._poller.at(frame.capture_ts)
