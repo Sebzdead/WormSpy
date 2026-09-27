@@ -7,3 +7,9 @@ WormSpy/backend/code/app_basler.py
 WormSpy/backend/code/basler_test.py
 WormSpy/backend/code/Reda_app.py
 .DS_Store
+
+# Python rework (uv)
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
