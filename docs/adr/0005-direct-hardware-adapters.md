@@ -49,3 +49,22 @@ writers and a demo mode. It blocks this use case in several ways:
   velocity control.
 - Adoption by other labs happens by writing an adapter against the interfaces. Any vendor-specific
   code stays inside its adapter.
+
+## Amendment (2026-09-27): stage units, firmware limits, config
+
+- **The `Stage` interface works in µm, not native microsteps.** Positions, safe ranges, absolute
+  moves and velocity moves (µm/s) are all in µm. zaber-motion converts units itself using its
+  device database, so no hand-typed microstep constant (`MM_MST`) survives. Everything downstream
+  (per-frame CSV, calibration, tracking) is also in µm.
+- **Safe ranges are enforced twice.**
+  - At connect, the Zaber adapter writes each axis's configured safe range into the controller's
+    `limit.min` / `limit.max` settings. The firmware then stops the stage even if the PC or app
+    hangs mid-velocity-move.
+  - Software clamps every target and reports *limit reached*.
+
+  These device settings persist on the controller and are overwritten from config on every
+  start.
+- **Rig configuration** lives in a human-edited `rig.toml`: serial ports, camera serials, safe
+  ranges, stick speeds, gamepad mapping and data folder. It is read with the stdlib `tomllib`, so
+  the minimum Python version is 3.11. Calibration results are machine-written to a separate
+  `calibration.json` (ADR 0009).

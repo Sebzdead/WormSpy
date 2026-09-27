@@ -63,3 +63,14 @@ threads caused races, including recordings split across two folders.
 
 - The UI can't misrepresent the hardware, and every control path is the same code path.
 - The state machine is pure logic, so it can be unit-tested without Qt or hardware.
+
+## Default gamepad mapping (2026-09-27)
+
+The mapping is editable in `rig.toml`:
+- Left stick jogs XY and the right stick jogs Z.
+- **X** = toggle tracking.
+- **B** = toggle recording (both unchanged from v1).
+- **A** = Return to Focus.
+- **Y** = Set Focus.
+
+Buttons fire on the press edge, not while held.
