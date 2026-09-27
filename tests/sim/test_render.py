@@ -70,3 +70,28 @@ def test_noise_is_added_only_when_requested():
                                 rng=np.random.default_rng(0))
     assert not np.array_equal(clean, noisy)
     assert abs(noisy.astype(float).mean() - clean.astype(float).mean()) < 5.0
+
+
+# --- calibration target: world-fixed beads (ADR 0009) ------------------------------------------
+
+def _far_worm():
+    return SyntheticWorm(seed=0, start_um=(1e6, 1e6))   # out of view
+
+
+def test_calibration_target_is_fixed_to_the_plate_not_the_camera():
+    stage = np.array([500.0, 300.0])
+    a = render_behaviour(_far_worm(), stage, GEOM, target=True)
+    b = render_behaviour(_far_worm(), stage + (40.0, 0.0), GEOM, target=True)
+    # moving the stage 40 µm (= 10 px) shifts the whole pattern 10 px left
+    np.testing.assert_array_equal(a[20:-20, 30:-20], b[20:-20, 20:-30])
+
+
+def test_calibration_target_has_beads_in_both_channels():
+    beh = render_behaviour(_far_worm(), (0.0, 0.0), GEOM, target=True)
+    flu = render_fluorescence(_far_worm(), (0.0, 0.0), GEOM, target=True)
+    assert (beh < 150).sum() > 50              # dark beads in brightfield
+    assert (flu > 5000).sum() > 20             # bright beads in fluorescence
+
+
+def test_no_target_by_default():
+    assert render_behaviour(_far_worm(), (0.0, 0.0), GEOM).min() == 200
