@@ -4,6 +4,7 @@ from typing import Protocol
 
 from wormspy.acquisition.recorder import ChannelConfig
 from wormspy.core.cameras import Camera
+from wormspy.core.stage import Stage
 
 
 class RigHandle(Protocol):
@@ -12,6 +13,10 @@ class RigHandle(Protocol):
     clock_channel: ChannelConfig
     follower_channel: ChannelConfig
     fps: float
+    stage: Stage              # connected once at startup; NullStage if absent
+
+    def now(self) -> float:
+        """The clock that stamps frames' capture_ts (time.monotonic on the rig)."""
 
     def start(self) -> None:
         """Begin exposing frames (configure trigger, start both cameras)."""

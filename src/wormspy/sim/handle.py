@@ -19,8 +19,13 @@ class SimRigHandle:
         self.clock_channel = _config(clock_name, rig.clock_spec)
         self.follower_channel = _config(follower_name, rig.follower_spec)
         self.fps = 1.0 / rig.frame_period_s
+        self.stage = rig.stage
         self._speed = speed
         self._driver: SimDriver | None = None
+
+    def now(self) -> float:
+        """Simulated time: stage motion and frame capture_ts both run on it."""
+        return self.rig.time_s
 
     def start(self) -> None:
         self._driver = SimDriver(self.rig, speed=self._speed)

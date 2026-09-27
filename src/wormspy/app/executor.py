@@ -17,6 +17,7 @@ from wormspy.acquisition.pairing import FramePair
 from wormspy.acquisition.recorder import Recorder
 from wormspy.acquisition.rig import RigHandle
 from wormspy.acquisition.session import create_session
+from wormspy.acquisition.stage_poller import StagePoller, StageTelemetry
 from wormspy.control import StateStore
 from wormspy.control import effects as X
 from wormspy.control import events as E
@@ -35,6 +36,8 @@ class Executor:
         self._recorder: Recorder | None = None
         self._recorder_lock = threading.Lock()
         self._effects: queue.Queue = queue.Queue()
+        self.poller = StagePoller(rig.stage, rig.now)   # runs for the app's lifetime
+        self.poller.start()
         self._handlers = {
             X.StartAcquisition: self._start_acquisition,
             X.StopAcquisition: self._stop_acquisition,
@@ -42,9 +45,14 @@ class Executor:
             X.OpenRecording: self._open_recording,
             X.CloseRecording: self._close_recording,
             X.WriteEvent: self._write_event,
+            X.CaptureFocus: self._capture_focus,
+            X.MoveZTo: self._move_z_to,
         }
         threading.Thread(target=self._run, name="executor", daemon=True).start()
         store.on_effect(self._effects.put)
+
+    def close(self) -> None:
+        self.poller.stop()
 
     def wait_idle(self) -> None:
         """Block until every queued effect, including follow-ups, has been carried out."""
@@ -112,7 +120,9 @@ class Executor:
     def _open_recording(self, effect: X.OpenRecording) -> None:
         recorder = Recorder(Path(effect.session_dir) / effect.name, self._rig.clock_channel,
                             self._rig.follower_channel, fps=self._rig.fps,
-                            on_event=self._store.dispatch, queue_size=self._recorder_queue_size)
+                            on_event=self._store.dispatch, queue_size=self._recorder_queue_size,
+                            telemetry=StageTelemetry(self.poller,
+                                                     lambda: self._store.state.focus_z_um))
         try:
             recorder.start()
         except OSError as exc:
@@ -132,3 +142,11 @@ class Executor:
             recorder = self._recorder
         if recorder is not None:
             recorder.mark_event(effect.label)
+
+    # --- focus (ADR 0002) ----------------------------------------------------------------
+
+    def _capture_focus(self, _: X.CaptureFocus) -> None:
+        self._store.dispatch(E.FocusCaptured(z_um=self._rig.stage.position_um("z")))
+
+    def _move_z_to(self, effect: X.MoveZTo) -> None:
+        self._rig.stage.move_absolute_um("z", effect.z_um)   # clamped to the Z safe range

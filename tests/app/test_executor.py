@@ -22,7 +22,8 @@ GEOM = ImageGeometry(width_px=48, height_px=32, um_per_px=30.0)
 
 
 def _app(tmp_path, clock_drops=(), speed=10.0):
-    stage = SimStage({a: (0.0, 1e7) for a in "xyz"}, 1000.0, {"x": 0.0, "y": 0.0, "z": 0.0})
+    stage = SimStage({a: (0.0, 1e7) for a in "xyz"}, 1000.0,
+                     {"x": 1000.0, "y": 2000.0, "z": 3000.0})
     rig = SimRig(SyntheticWorm(seed=0), stage, ChannelSpec(GEOM, "fluorescence"),
                  ChannelSpec(GEOM, "behaviour"), fps=20.0, clock_drops=clock_drops)
     handle = SimRigHandle(rig, clock_name="gcamp", follower_name="bf", speed=speed)
@@ -145,6 +146,58 @@ def test_camera_failure_while_recording_finalises_the_files_and_goes_idle(tmp_pa
     executor.wait_idle()
     assert any(a.kind == "acquisition_failed" for a in store.state.alarms)
     assert (Path(store.state.session_dir) / "rec-001" / "recording.json").exists()
+
+
+def _csv(rec):
+    with open(rec / "frames.csv", newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+def test_recorded_rows_carry_the_stage_position_at_frame_time(tmp_path):
+    store, hub, executor, _ = _app(tmp_path)
+    rows = _csv(_record(store, executor, hub))
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+    assert {(r["x_um"], r["y_um"], r["z_um"]) for r in rows} == {("1000.0", "2000.0", "3000.0")}
+    assert {r["z_moved"] for r in rows} == {"0"}
+
+
+def test_refocusing_during_a_recording_is_flagged_per_frame(tmp_path):
+    store, hub, executor, handle = _app(tmp_path)
+    store.dispatch(C.StartLive())
+    store.dispatch(C.NewSession(metadata={"animal_id": "w1"}))
+    _wait(lambda: store.state.session_dir is not None)
+    store.dispatch(C.StartRecording())
+    executor.wait_idle()
+    _wait(lambda: hub.latest("gcamp") is not None)
+    start = hub.latest("gcamp").device_frame_id
+    _wait(lambda: hub.latest("gcamp").device_frame_id >= start + 10)
+    handle.stage.move_velocity_um_s("z", 200.0)          # operator turns the focus stick
+    _wait(lambda: hub.latest("gcamp").device_frame_id >= start + 20)
+    handle.stage.stop("z")
+    _wait(lambda: hub.latest("gcamp").device_frame_id >= start + 30)
+    store.dispatch(C.StopRecording())
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+    rows = _csv(Path(store.state.session_dir) / "rec-001")
+    assert rows[0]["z_moved"] == "0" and rows[-1]["z_moved"] == "0"
+    assert any(r["z_moved"] == "1" for r in rows)
+    assert float(rows[-1]["z_um"]) > float(rows[0]["z_um"])
+
+
+def test_set_focus_stores_z_and_return_to_focus_moves_back(tmp_path):
+    store, _, executor, handle = _app(tmp_path)
+    store.dispatch(C.StartLive())
+    store.dispatch(C.SetFocus())
+    executor.wait_idle()
+    assert store.state.focus_z_um == 3000.0
+    handle.stage.move_absolute_um("z", 3400.0)
+    _wait(lambda: handle.stage.position_um("z") == 3400.0)
+    store.dispatch(C.ReturnToFocus())
+    executor.wait_idle()
+    _wait(lambda: handle.stage.position_um("z") == 3000.0)
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
 
 
 def test_effects_not_built_yet_raise_a_visible_alarm(tmp_path):
