@@ -445,6 +445,8 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "opencv-python-headless" },
+    { name = "pyqtgraph" },
+    { name = "pyside6" },
     { name = "tifffile", version = "2026.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "tifffile", version = "2026.9.20", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
@@ -452,10 +454,6 @@ dependencies = [
 [package.optional-dependencies]
 gamepad = [
     { name = "pygame" },
-]
-ui = [
-    { name = "pyqtgraph" },
-    { name = "pyside6" },
 ]
 zaber = [
     { name = "zaber-motion" },
@@ -476,12 +474,12 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26" },
     { name = "opencv-python-headless", specifier = ">=4.9" },
     { name = "pygame", marker = "extra == 'gamepad'", specifier = ">=2.5" },
-    { name = "pyqtgraph", marker = "extra == 'ui'", specifier = ">=0.13" },
-    { name = "pyside6", marker = "extra == 'ui'", specifier = ">=6.7" },
+    { name = "pyqtgraph", specifier = ">=0.13" },
+    { name = "pyside6", specifier = ">=6.7" },
     { name = "tifffile", specifier = ">=2024.1" },
     { name = "zaber-motion", marker = "extra == 'zaber'", specifier = ">=7" },
 ]
-provides-extras = ["ui", "zaber", "gamepad"]
+provides-extras = ["zaber", "gamepad"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -10,11 +10,14 @@ dependencies = [
     "numpy>=1.26",
     "opencv-python-headless>=4.9",  # also writes FFV1 (behaviour channel), see ADR 0007
     "tifffile>=2024.1",
+    "PySide6>=6.7",       # the desktop UI (ADR 0004)
+    "pyqtgraph>=0.13",
 ]
 
+[project.scripts]
+wormspy = "wormspy.app.main:main"
+
 [project.optional-dependencies]
-# Desktop UI (ADR 0004)
-ui = ["PySide6>=6.7", "pyqtgraph>=0.13"]
 # Hardware adapters (ADR 0005). PySpin is not on PyPI: install the wheel shipped with the
 # Spinnaker SDK into the environment (`uv pip install <spinnaker_python-*.whl>`).
 zaber = ["zaber-motion>=7"]

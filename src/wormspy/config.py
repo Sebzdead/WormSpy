@@ -65,6 +65,9 @@ def _button_commands() -> dict[str, type]:
 
 def load_config(path: Path) -> RigConfig:
     path = Path(path)
+    if not path.exists():
+        # no rig.toml yet: every default
+        return RigConfig(stage=_stage({}), gamepad=_gamepad({}), paths=_paths({}, path))
     try:
         raw = tomllib.loads(path.read_text())
     except tomllib.TOMLDecodeError as exc:

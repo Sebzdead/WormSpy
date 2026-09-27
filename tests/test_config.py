@@ -71,3 +71,9 @@ data_root = "D:/WormsPy_data"
 def test_invalid_configs_are_rejected_with_a_clear_message(tmp_path, text, message):
     with pytest.raises(ConfigError, match=message):
         load_config(_write(tmp_path, text))
+
+
+def test_a_missing_config_file_means_all_defaults(tmp_path):
+    config = load_config(tmp_path / "rig.toml")
+    assert config.stage.xy_port == "COM6"
+    assert config.paths.calibration == tmp_path / "calibration.json"

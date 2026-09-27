@@ -9,7 +9,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QDockWidget,
     QFrame,
@@ -76,6 +76,8 @@ class AlarmBar(QFrame):
 
 
 class MainWindow(QMainWindow):
+    closing = Signal()          # emitted when the operator closes the window: shut down cleanly
+
     def __init__(self, bridge: StateBridge, hub: FrameHub, left: tuple[str, str],
                  right: tuple[str, str], status: Callable[[], StatusInfo],
                  overlay: Callable[[], tuple | None] = lambda: None,
@@ -152,3 +154,8 @@ class MainWindow(QMainWindow):
                 fps = (samples[-1][0] - samples[0][0]) / (samples[-1][1] - samples[0][1])
                 rates.append(f"{view.channel} {fps:.1f} fps")
         self.fps_label.setText(" · ".join(rates))
+
+    def closeEvent(self, event) -> None:
+        self._timer.stop()
+        self.closing.emit()
+        super().closeEvent(event)
