@@ -85,3 +85,8 @@ class ApplyPreset:
 @dataclass(frozen=True)
 class AcknowledgeAlarm:
     kind: str
+
+
+@dataclass(frozen=True)
+class Calibrate:
+    """Run the stage-to-camera calibration routine (ADR 0009). Moves the stage."""

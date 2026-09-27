@@ -63,3 +63,8 @@ class CentreOn:
 @dataclass(frozen=True)
 class ApplyPreset:
     name: str
+
+
+@dataclass(frozen=True)
+class RunCalibration:
+    pass

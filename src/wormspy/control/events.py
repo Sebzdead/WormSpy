@@ -47,3 +47,14 @@ class RecordingFailed:
 class AcquisitionFailed:
     """The cameras stopped delivering (open failure, disconnect)."""
     reason: str
+
+
+@dataclass(frozen=True)
+class CalibrationCompleted:
+    """A calibration was measured, or a stored one was loaded at startup."""
+    residual_px: dict[str, float]
+
+
+@dataclass(frozen=True)
+class CalibrationFailed:
+    reason: str

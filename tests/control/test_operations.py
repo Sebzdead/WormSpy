@@ -91,7 +91,8 @@ def test_event_markers_are_written_only_while_recording():
     assert t.effects == (X.WriteEvent(label="glycerol"),)
 
 
-def test_centre_on_a_clicked_point_needs_live():
+def test_centre_on_a_clicked_point_needs_live_and_a_calibration():
     assert reduce(AppState(), C.CentreOn(channel="behaviour", x_px=10, y_px=20)).rejected
-    t = reduce(_live(), C.CentreOn(channel="behaviour", x_px=10, y_px=20))
+    calibrated = reduce(_live(), E.CalibrationCompleted(residual_px={"behaviour": 0.1})).state
+    t = reduce(calibrated, C.CentreOn(channel="behaviour", x_px=10, y_px=20))
     assert t.effects == (X.CentreOn(channel="behaviour", x_px=10, y_px=20),)

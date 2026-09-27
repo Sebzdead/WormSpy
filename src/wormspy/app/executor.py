@@ -18,6 +18,7 @@ from wormspy.acquisition.recorder import Recorder
 from wormspy.acquisition.rig import RigHandle
 from wormspy.acquisition.session import create_session
 from wormspy.acquisition.stage_poller import StagePoller, StageTelemetry
+from wormspy.calibration.routine import CalibrationError, RigCalibration, run_calibration
 from wormspy.control import StateStore
 from wormspy.control import effects as X
 from wormspy.control import events as E
@@ -26,12 +27,14 @@ from wormspy.core.frames import FrameHub
 
 class Executor:
     def __init__(self, store: StateStore, rig: RigHandle, hub: FrameHub, data_root: Path,
-                 recorder_queue_size: int = 64) -> None:
+                 calibration_path: Path | None = None, recorder_queue_size: int = 64) -> None:
         self._store = store
         self._rig = rig
         self._hub = hub
         self._data_root = Path(data_root)
         self._recorder_queue_size = recorder_queue_size
+        self._calibration_path = None if calibration_path is None else Path(calibration_path)
+        self._calibration: RigCalibration | None = None
         self._loop: AcquisitionLoop | None = None
         self._recorder: Recorder | None = None
         self._recorder_lock = threading.Lock()
@@ -47,9 +50,12 @@ class Executor:
             X.WriteEvent: self._write_event,
             X.CaptureFocus: self._capture_focus,
             X.MoveZTo: self._move_z_to,
+            X.RunCalibration: self._run_calibration,
+            X.CentreOn: self._centre_on,
         }
         threading.Thread(target=self._run, name="executor", daemon=True).start()
         store.on_effect(self._effects.put)
+        self._load_calibration()
 
     def close(self) -> None:
         self.poller.stop()
@@ -150,3 +156,39 @@ class Executor:
 
     def _move_z_to(self, effect: X.MoveZTo) -> None:
         self._rig.stage.move_absolute_um("z", effect.z_um)   # clamped to the Z safe range
+
+    # --- calibration and click-to-centre (ADR 0009) --------------------------------------
+
+    def _load_calibration(self) -> None:
+        if self._calibration_path is None or not self._calibration_path.exists():
+            return
+        try:
+            self._calibration = RigCalibration.load(self._calibration_path)
+        except (OSError, ValueError, KeyError) as exc:
+            self._store.dispatch(E.AlarmRaised(kind="calibration_failed",
+                                               message=f"Could not load calibration: {exc}"))
+            return
+        self._store.dispatch(E.CalibrationCompleted(residual_px=self._calibration.residuals()))
+
+    def _run_calibration(self, _: X.RunCalibration) -> None:
+        channels = [self._rig.clock_channel.name, self._rig.follower_channel.name]
+        try:
+            calibration = run_calibration(self._rig.stage, self._hub, channels)
+        except CalibrationError as exc:
+            self._store.dispatch(E.CalibrationFailed(reason=str(exc)))
+            return
+        if self._calibration_path is not None:
+            calibration.save(self._calibration_path)
+        self._calibration = calibration
+        self._store.dispatch(E.CalibrationCompleted(residual_px=calibration.residuals()))
+
+    def _centre_on(self, effect: X.CentreOn) -> None:
+        camera = None if self._calibration is None else self._calibration.cameras.get(effect.channel)
+        if camera is None:
+            self._store.dispatch(E.AlarmRaised(kind="calibration_failed",
+                                               message=f"No calibration for {effect.channel}."))
+            return
+        dx, dy = camera.stage_offset_um((effect.x_px, effect.y_px))
+        stage = self._rig.stage
+        stage.move_absolute_um("x", stage.position_um("x") + dx)
+        stage.move_absolute_um("y", stage.position_um("y") + dy)

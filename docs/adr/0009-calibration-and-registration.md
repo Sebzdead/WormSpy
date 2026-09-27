@@ -35,3 +35,25 @@ analysis needs the two channels registered.
   it.
 - Calibration needs a textured sample (e.g. a plate with a grid or bacterial lawn edge). This is
   documented in the operator guide.
+
+## Implementation notes (2026-09-27)
+
+- **Routine** (`wormspy.calibration.routine`):
+  - It moves the stage through six moves of 100 µm: ±x, ±y and two diagonals.
+  - It measures each camera's image shift by windowed phase correlation, fits the matrix by
+    least squares, and always returns the stage to its start position.
+  - It uses the stage position *measured* after each move, and images taken at least two frames
+    after settling.
+  - It fails safely, without saving, when there isn't enough image shift (no texture) or when the
+    residual exceeds 1 px.
+- **Storage.** The result goes to `calibration.json`, with each camera's `matrix_px_per_um`, RMS
+  residual and image shape, plus a creation time. It is loaded at startup. Click-to-centre is
+  refused until a calibration exists.
+- **Accuracy on the simulated rig:** matrices are within 1% of the true scale, rotation and mirror
+  for both cameras, and click-to-centre lands within 2 µm. Sub-pixel shift estimation has a bias of
+  about 0.1 px (OpenCV's centroid peak refinement). That is negligible for moves of about 100 px.
+- **Not yet done: the translation offset between the two cameras' image centres.** The two
+  matrices give the rotation and scale between the channels, but not their offset. Measuring it
+  needs a feature seen by both cameras. A fluorescent bead slide under transmitted light would
+  work: the beads appear dark in brightfield and bright in fluorescence. This matters for overlays
+  and ratiometric analysis, not for tracking or click-to-centre.

@@ -39,3 +39,5 @@ class AppState:
     preset: str | None = None         # named camera preset (ADR 0006)
     recording_drops: int = 0          # dropped frames in the current Recording
     alarms: tuple[Alarm, ...] = ()
+    calibrated: bool = False          # a stage-to-camera calibration is available (ADR 0009)
+    calibrating: bool = False         # the routine is moving the stage right now

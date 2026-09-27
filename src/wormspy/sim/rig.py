@@ -73,6 +73,7 @@ class SimRig:
         self.clock_camera = SimCamera()
         self.follower_camera = SimCamera()
         self.clock_spec, self.follower_spec = clock, follower
+        self.target = False       # True: a calibration bead slide is under the objective
         self._channels = ((self.clock_camera, clock, set(clock_drops), 0),
                           (self.follower_camera, follower, set(follower_drops),
                            follower_offset_ns))
@@ -107,4 +108,4 @@ class SimRig:
     def _render(self, spec: ChannelSpec, stage_um) -> np.ndarray:
         render = render_fluorescence if spec.role == "fluorescence" else render_behaviour
         return render(self.worm, stage_um, spec.geometry, noise_sigma=spec.noise_sigma,
-                      rng=self._rng)
+                      rng=self._rng, target=self.target)

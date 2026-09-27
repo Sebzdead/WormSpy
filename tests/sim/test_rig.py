@@ -87,3 +87,12 @@ def test_a_failed_sim_camera_raises_on_read_like_a_disconnected_camera():
     rig.clock_camera.fail("USB disconnect")
     with pytest.raises(RuntimeError, match="USB disconnect"):
         rig.clock_camera.read()
+
+
+def test_the_calibration_target_can_be_placed_under_the_objective():
+    rig = _rig(worm=SyntheticWorm(seed=0, start_um=(1e6, 1e6)))
+    rig.tick()
+    assert _drain(rig.follower_camera)[-1].image.min() == 200     # blank plate
+    rig.target = True
+    rig.tick()
+    assert _drain(rig.follower_camera)[-1].image.min() < 150      # beads visible

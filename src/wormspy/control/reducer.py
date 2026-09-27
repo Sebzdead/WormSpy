@@ -43,6 +43,8 @@ def _disable_tracker(s: AppState) -> tuple:
 
 
 def _stop_live(s: AppState, _: C.StopLive) -> Transition:
+    if s.calibrating:
+        return _reject(s, "Wait for the calibration to finish.")
     if s.mode is Mode.RECORDING:
         return _reject(s, "Stop the recording before stopping the live view.")
     if s.mode is Mode.IDLE:
@@ -58,6 +60,8 @@ def _new_session(s: AppState, cmd: C.NewSession) -> Transition:
 
 
 def _start_recording(s: AppState, _: C.StartRecording) -> Transition:
+    if s.calibrating:
+        return _reject(s, "Wait for the calibration to finish.")
     if s.mode is Mode.RECORDING:
         return _reject(s, "Already recording.")
     if s.mode is not Mode.LIVE:
@@ -111,6 +115,8 @@ def _set_tracker(s: AppState, enabled: bool) -> X.SetTracker:
 
 
 def _set_tracking(s: AppState, cmd: C.SetTracking) -> Transition:
+    if cmd.enabled and s.calibrating:
+        return _reject(s, "Wait for the calibration to finish.")
     if cmd.enabled and not _acquiring(s):
         return _reject(s, "Start the live view before tracking.")
     status = TrackingStatus.TRACKING if cmd.enabled else TrackingStatus.OFF
@@ -142,6 +148,8 @@ def _focus_captured(s: AppState, ev: E.FocusCaptured) -> Transition:
 
 
 def _return_to_focus(s: AppState, _: C.ReturnToFocus) -> Transition:
+    if s.calibrating:
+        return _reject(s, "Wait for the calibration to finish.")
     if s.focus_z_um is None:
         return _reject(s, "No focus stored yet. Use Set Focus first.")
     return _ok(s, X.MoveZTo(z_um=s.focus_z_um))
@@ -156,6 +164,10 @@ def _mark_event(s: AppState, cmd: C.MarkEvent) -> Transition:
 def _centre_on(s: AppState, cmd: C.CentreOn) -> Transition:
     if not _acquiring(s):
         return _reject(s, "Start the live view before centring.")
+    if s.calibrating:
+        return _reject(s, "Wait for the calibration to finish.")
+    if not s.calibrated:
+        return _reject(s, "Calibrate the stage and cameras before click-to-centre.")
     return _ok(s, X.CentreOn(channel=cmd.channel, x_px=cmd.x_px, y_px=cmd.y_px))
 
 
@@ -209,6 +221,26 @@ def _acquisition_failed(s: AppState, ev: E.AcquisitionFailed) -> Transition:
                *effects)
 
 
+def _calibrate(s: AppState, _: C.Calibrate) -> Transition:
+    if s.calibrating:
+        return _reject(s, "Calibration is already running.")
+    if s.mode is not Mode.LIVE:
+        return _reject(s, "Calibrate from the live view, not while idle or recording.")
+    if s.tracking is not TrackingStatus.OFF:
+        return _reject(s, "Turn tracking off before calibrating.")
+    return _ok(replace(s, calibrating=True), X.RunCalibration())
+
+
+def _calibration_completed(s: AppState, _: E.CalibrationCompleted) -> Transition:
+    return _ok(_without_alarm(replace(s, calibrated=True, calibrating=False),
+                              "calibration_failed"))
+
+
+def _calibration_failed(s: AppState, ev: E.CalibrationFailed) -> Transition:
+    return _ok(_with_alarm(replace(s, calibrating=False), "calibration_failed",
+                           f"Calibration failed: {ev.reason}"))
+
+
 _HANDLERS: dict[type, Callable[[AppState, object], Transition]] = {
     C.StartLive: _start_live,
     C.StopLive: _stop_live,
@@ -234,6 +266,9 @@ _HANDLERS: dict[type, Callable[[AppState, object], Transition]] = {
     E.AlarmCleared: _alarm_cleared,
     E.RecordingFailed: _recording_failed,
     E.AcquisitionFailed: _acquisition_failed,
+    C.Calibrate: _calibrate,
+    E.CalibrationCompleted: _calibration_completed,
+    E.CalibrationFailed: _calibration_failed,
 }
 
 
