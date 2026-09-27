@@ -160,3 +160,10 @@ def test_csv_rows_reach_disk_while_the_recording_is_still_open(tmp_path):
         w.write_row(i, host_time=float(i), frames={"a": None, "b": None}, skew_ns=None)
     assert len(_rows(path)) == 5      # a crash now would lose nothing
     w.close()
+
+
+def test_csv_host_time_is_blank_when_unknown(tmp_path):
+    path = tmp_path / "frames.csv"
+    with FramesCsvWriter(path, channels=("a", "b")) as w:
+        w.write_row(0, host_time=None, frames={"a": None, "b": None}, skew_ns=None)
+    assert _rows(path)[0]["host_time"] == ""

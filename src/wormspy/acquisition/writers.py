@@ -125,7 +125,7 @@ class FramesCsvWriter:
         self._csv.writerow(header)
         self._file.flush()
 
-    def write_row(self, frame_index: int, host_time: float, frames: Mapping[str, Frame | None],
+    def write_row(self, frame_index: int, host_time: float | None, frames: Mapping[str, Frame | None],
                   skew_ns: int | None, telemetry: Mapping[str, object] | None = None) -> None:
         telemetry = dict(telemetry or {})
         unknown = set(telemetry) - set(CSV_TELEMETRY_COLUMNS)
