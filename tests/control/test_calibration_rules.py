@@ -18,7 +18,9 @@ def test_calibration_runs_only_while_live_and_not_tracking_or_recording():
     assert reduce(AppState(), C.Calibrate()).rejected
     t = reduce(_live(), C.Calibrate())
     assert t.effects == (X.RunCalibration(),) and t.state.calibrating
-    tracking = reduce(_live(), C.SetTracking(enabled=True)).state
+    calibrated = reduce(_live(), E.CalibrationCompleted(residual_px={"bf": 0.1})).state
+    tracking = reduce(calibrated, C.SetTracking(enabled=True)).state
+    assert tracking.tracking is not tracking.tracking.OFF
     assert reduce(tracking, C.Calibrate()).rejected
     recording = reduce(reduce(_live(), E.SessionOpened(path="/s")).state, C.StartRecording()).state
     assert reduce(recording, C.Calibrate()).rejected
@@ -53,3 +55,10 @@ def test_a_successful_calibration_clears_an_earlier_failure_alarm():
     state = reduce(reduce(state, C.Calibrate()).state,
                    E.CalibrationCompleted(residual_px={"bf": 0.1})).state
     assert not any(a.kind == "calibration_failed" for a in state.alarms)
+
+
+def test_tracking_needs_a_calibration_to_convert_pixels_to_stage_moves():
+    t = reduce(_live(), C.SetTracking(enabled=True))
+    assert t.rejected and "calibrat" in t.rejected.lower()
+    calibrated = reduce(_live(), E.CalibrationCompleted(residual_px={"bf": 0.1})).state
+    assert reduce(calibrated, C.SetTracking(enabled=True)).rejected is None

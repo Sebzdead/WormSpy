@@ -124,3 +124,35 @@ def test_moving_away_from_a_limit_is_allowed():
     v, status = _servo().step(0.02, target=(-500.0, 0.0), position=(0.0, 0.0),
                               at_limit={"x": "max"})
     assert v[0] < 0 and status is S.TRACKING
+
+
+# --- velocity feed-forward ------------------------------------------------------------------
+
+def test_the_filter_estimates_the_worm_velocity_from_accepted_targets():
+    f = TargetFilter(CFG)
+    for i in range(20):
+        f.update(i * 0.05, (i * 10.0, -i * 5.0))            # 200 µm/s in x, -100 µm/s in y
+    assert f.velocity == pytest.approx((200.0, -100.0), rel=0.05)
+
+
+def test_the_velocity_estimate_is_zero_when_lost_or_reset():
+    f = TargetFilter(CFG)
+    for i in range(10):
+        f.update(i * 0.05, (i * 10.0, 0.0))
+    for t in (0.6, 0.7, 0.8):
+        f.update(t, None)
+    assert f.velocity == (0.0, 0.0)
+
+
+def test_feed_forward_removes_the_steady_state_lag_behind_a_moving_worm():
+    def lag(feed_forward):
+        servo = _servo(feed_forward=feed_forward)
+        position, dt = 0.0, 0.02
+        for i in range(500):                                # worm moving at 200 µm/s
+            target = 200.0 * i * dt
+            (vx, _), _ = servo.step(dt, target=(target, 0.0), position=(position, 0.0),
+                                    target_velocity=(200.0, 0.0))
+            position += vx * dt
+        return target - position
+    assert lag(feed_forward=0.0) == pytest.approx(100.0, rel=0.05)   # v / gain
+    assert abs(lag(feed_forward=1.0)) < 15.0

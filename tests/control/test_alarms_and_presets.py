@@ -65,7 +65,9 @@ def test_failed_recording_returns_to_live_and_raises_an_alarm():
 
 
 def test_failed_acquisition_returns_to_idle_with_tracking_off():
-    on = reduce(_live(), C.SetTracking(enabled=True)).state
+    calibrated = reduce(_live(), E.CalibrationCompleted(residual_px={"bf": 0.1})).state
+    on = reduce(calibrated, C.SetTracking(enabled=True)).state
+    assert on.tracking is TrackingStatus.TRACKING          # precondition: tracking really on
     state = reduce(on, E.AcquisitionFailed(reason="Camera 2 not found")).state
     assert state.mode is Mode.IDLE
     assert state.tracking is TrackingStatus.OFF

@@ -119,6 +119,8 @@ def _set_tracking(s: AppState, cmd: C.SetTracking) -> Transition:
         return _reject(s, "Wait for the calibration to finish.")
     if cmd.enabled and not _acquiring(s):
         return _reject(s, "Start the live view before tracking.")
+    if cmd.enabled and not s.calibrated:
+        return _reject(s, "Calibrate the stage and cameras before tracking.")
     status = TrackingStatus.TRACKING if cmd.enabled else TrackingStatus.OFF
     return _ok(replace(s, tracking=status), _set_tracker(s, cmd.enabled))
 

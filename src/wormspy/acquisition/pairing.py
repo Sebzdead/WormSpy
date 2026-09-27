@@ -37,6 +37,12 @@ class FramePairer:
         self._follower_max: int | None = None
         self._reference_offset_ns: int | None = None
 
+    def index_of(self, device_frame_id: int) -> int | None:
+        """The frame_index a device frame ID has (or will have) in this acquisition run."""
+        if self._origin is None or device_frame_id < self._origin:
+            return None
+        return device_frame_id - self._origin
+
     def add_clock(self, frame: Frame) -> list[FramePair]:
         if self._origin is None:
             self._origin = frame.device_frame_id

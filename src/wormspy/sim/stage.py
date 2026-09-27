@@ -23,6 +23,10 @@ class SimStage(Stage):
     def position_um(self, axis: str) -> float:
         return self._pos[axis]
 
+    def velocity_um_s(self, axis: str) -> float:
+        """The commanded velocity (0 unless a velocity move is running)."""
+        return self._velocity[axis]
+
     def limits_um(self, axis: str) -> tuple[float, float]:
         return self._limits[axis]
 

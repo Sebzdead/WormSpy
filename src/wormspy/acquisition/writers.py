@@ -99,11 +99,10 @@ def open_channel_writer(role: str, path_stem: Path, shape: tuple[int, int],
     raise ValueError(f"unknown channel role {role!r}")
 
 
+# Tracking results (tracked point, worm plate position, tracking state) are written to their own
+# tracking.csv by the tracker, keyed by frame_index, because the tracker may lag the recorder.
 CSV_TELEMETRY_COLUMNS = (
     "x_um", "y_um", "z_um",                    # stage, interpolated to frame time
-    "worm_x_um", "worm_y_um",                  # world (plate) position via calibration
-    "target_px_x", "target_px_y",
-    "tracking_state", "estimator", "source_channel",
     "z_moved", "focus_set_z_um",
     "event",
     "stim_state", "stim_param",                # reserved for closed-loop optogenetics
@@ -162,3 +161,46 @@ def _cell(value: object) -> object:
     if isinstance(value, bool):
         return int(value)
     return value
+
+
+TRACKING_COLUMNS = ("frame_index", "source_channel", "frame_id", "capture_ts", "estimator",
+                    "target_px_x", "target_px_y", "worm_x_um", "worm_y_um", "accepted", "status")
+
+
+class TrackingCsvWriter:
+    """tracking.csv: one row per frame the tracker evaluated (it may skip frames when busy).
+
+    Written from the tracker thread, independently of frames.csv, and joined to it on
+    frame_index. `accepted` = 0 means the estimate was rejected as implausible, or nothing was
+    found.
+    """
+
+    def __init__(self, path: Path, flush_every: int = 10) -> None:
+        self.path = Path(path)
+        self._flush_every = flush_every
+        self._since_flush = 0
+        self._file = open(self.path, "w", newline="")  # noqa: SIM115 - closed in close()
+        self._csv = csv.writer(self._file)
+        self._csv.writerow(TRACKING_COLUMNS)
+        self._file.flush()
+
+    def write_row(self, frame_index: int | None, source_channel: str, frame_id: int,
+                  capture_ts: float, estimator: str, target_px: tuple[float, float] | None,
+                  worm_um: tuple[float, float] | None, accepted: bool, status: str) -> None:
+        px = target_px or ("", "")
+        um = worm_um or ("", "")
+        self._csv.writerow([_cell(frame_index), source_channel, frame_id, capture_ts, estimator,
+                            px[0], px[1], um[0], um[1], int(accepted), status])
+        self._since_flush += 1
+        if self._since_flush >= self._flush_every:
+            self._file.flush()
+            self._since_flush = 0
+
+    def close(self) -> None:
+        self._file.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()

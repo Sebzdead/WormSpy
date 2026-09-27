@@ -12,6 +12,7 @@ from wormspy.acquisition.writers import (
     Ffv1Writer,
     FramesCsvWriter,
     TiffStackWriter,
+    TrackingCsvWriter,
     open_channel_writer,
 )
 from wormspy.core.frames import Frame
@@ -127,20 +128,22 @@ def test_csv_has_per_channel_and_telemetry_columns(tmp_path):
     assert header[2:9] == ["gcamp_frame_id", "gcamp_timestamp_ns", "gcamp_dropped",
                            "bf_frame_id", "bf_timestamp_ns", "bf_dropped", "pair_skew_ns"]
     assert header[9:] == list(CSV_TELEMETRY_COLUMNS)
-    for column in ("x_um", "worm_x_um", "tracking_state", "z_moved", "event", "stim_state"):
+    for column in ("x_um", "z_um", "z_moved", "focus_set_z_um", "event", "stim_state"):
         assert column in header
+    for column in ("worm_x_um", "tracking_state", "target_px_x"):   # these live in tracking.csv
+        assert column not in header
 
 
 def test_csv_rows_record_frames_drops_and_telemetry(tmp_path):
     path = tmp_path / "frames.csv"
     with FramesCsvWriter(path, channels=("gcamp", "bf")) as w:
         w.write_row(0, host_time=1.25, frames={"gcamp": _frame(10, 1000), "bf": _frame(10, 1150)},
-                    skew_ns=0, telemetry={"x_um": 25000.5, "tracking_state": "tracking"})
+                    skew_ns=0, telemetry={"x_um": 25000.5, "z_moved": True})
         w.write_row(1, host_time=1.35, frames={"gcamp": None, "bf": _frame(11, 2150)},
                     skew_ns=None, telemetry={"event": "glycerol"})
     rows = _rows(path)
     assert rows[0]["gcamp_frame_id"] == "10" and rows[0]["gcamp_dropped"] == "0"
-    assert rows[0]["x_um"] == "25000.5" and rows[0]["tracking_state"] == "tracking"
+    assert rows[0]["x_um"] == "25000.5" and rows[0]["z_moved"] == "1"
     assert rows[1]["gcamp_dropped"] == "1" and rows[1]["gcamp_frame_id"] == ""
     assert rows[1]["pair_skew_ns"] == "" and rows[1]["event"] == "glycerol"
     assert rows[1]["x_um"] == ""        # telemetry not reported this frame -> blank
@@ -167,3 +170,22 @@ def test_csv_host_time_is_blank_when_unknown(tmp_path):
     with FramesCsvWriter(path, channels=("a", "b")) as w:
         w.write_row(0, host_time=None, frames={"a": None, "b": None}, skew_ns=None)
     assert _rows(path)[0]["host_time"] == ""
+
+
+
+# --- tracking.csv -------------------------------------------------------------------------------
+
+def test_tracking_csv_logs_one_row_per_evaluated_frame(tmp_path):
+    path = tmp_path / "tracking.csv"
+    with TrackingCsvWriter(path) as w:
+        w.write_row(frame_index=12, source_channel="bf", frame_id=112, capture_ts=1.2,
+                    estimator="dark_object", target_px=(310.5, 200.25),
+                    worm_um=(25010.0, 24990.0), accepted=True, status="tracking")
+        w.write_row(frame_index=14, source_channel="bf", frame_id=114, capture_ts=1.4,
+                    estimator="dark_object", target_px=None, worm_um=None, accepted=False,
+                    status="tracking")
+    rows = _rows(path)
+    assert [r["frame_index"] for r in rows] == ["12", "14"]      # only frames evaluated
+    assert rows[0]["target_px_x"] == "310.5" and rows[0]["worm_y_um"] == "24990.0"
+    assert rows[0]["accepted"] == "1" and rows[1]["accepted"] == "0"
+    assert rows[1]["target_px_x"] == "" and rows[1]["status"] == "tracking"

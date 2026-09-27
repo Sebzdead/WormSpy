@@ -144,3 +144,20 @@ def test_simultaneous_event_markers_share_a_row(tmp_path):
     rec.submit(_pair(0))
     rec.stop()
     assert _rows(tmp_path)[0]["event"] == "a;b"
+
+
+def _track_row(index):
+    return {"frame_index": index, "source_channel": "bf", "frame_id": index,
+            "capture_ts": index / 10, "estimator": "dark_object", "target_px": (1.0, 2.0),
+            "worm_um": (3.0, 4.0), "accepted": True, "status": "tracking"}
+
+
+def test_tracking_results_go_to_the_recordings_tracking_csv(tmp_path):
+    rec = _recorder(tmp_path)
+    rec.submit(_pair(0))
+    rec.log_tracking(**_track_row(0))
+    rec.stop()
+    rec.log_tracking(**_track_row(1))        # late result after stop: ignored, no error
+    with open(tmp_path / "rec-001" / "tracking.csv", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert [r["frame_index"] for r in rows] == ["0"] and rows[0]["worm_x_um"] == "3.0"

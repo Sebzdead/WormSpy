@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from wormspy.acquisition.pairing import FramePair
-from wormspy.acquisition.writers import FramesCsvWriter, open_channel_writer
+from wormspy.acquisition.writers import FramesCsvWriter, TrackingCsvWriter, open_channel_writer
 from wormspy.control import events as E
 
 BACKLOG = "writer backlog"
@@ -59,6 +59,8 @@ class Recorder:
             for ch in (self._clock, self._follower)}
         self._csv = FramesCsvWriter(self.dir / "frames.csv",
                                     channels=(self._clock.name, self._follower.name))
+        self._tracking: TrackingCsvWriter | None = TrackingCsvWriter(self.dir / "tracking.csv")
+        self._tracking_lock = threading.Lock()
         self._thread.start()
 
     def submit(self, pair: FramePair) -> bool:
@@ -77,6 +79,12 @@ class Recorder:
             first = -1 if self._last_offered is None else self._last_offered + 1
             self._markers.append((first, label))
 
+    def log_tracking(self, **row) -> None:
+        """Write one tracker result to tracking.csv (tracker thread). Ignored after stop()."""
+        with self._tracking_lock:
+            if self._tracking is not None:
+                self._tracking.write_row(**row)
+
     def stop(self) -> None:
         """Write everything already queued, close the files and write recording.json."""
         self._queue.put(None)
@@ -84,6 +92,9 @@ class Recorder:
         for writer in self._writers.values():
             writer.close()
         self._csv.close()
+        with self._tracking_lock:
+            self._tracking.close()
+            self._tracking = None
         self._write_summary()
 
     # --- writer thread ------------------------------------------------------------------

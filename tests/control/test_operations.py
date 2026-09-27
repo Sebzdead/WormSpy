@@ -7,7 +7,9 @@ from wormspy.control import events as E
 
 
 def _live():
-    return reduce(AppState(), C.StartLive()).state
+    """Live and calibrated: tracking needs a calibration (ADR 0009)."""
+    live = reduce(AppState(), C.StartLive()).state
+    return reduce(live, E.CalibrationCompleted(residual_px={"behaviour": 0.1})).state
 
 
 def _recording():

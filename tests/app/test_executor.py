@@ -203,7 +203,7 @@ def test_set_focus_stores_z_and_return_to_focus_moves_back(tmp_path):
 def test_effects_not_built_yet_raise_a_visible_alarm(tmp_path):
     store, _, executor, _ = _app(tmp_path)
     store.dispatch(C.StartLive())
-    store.dispatch(C.SetTracking(enabled=True))
+    store.dispatch(C.ApplyPreset(name="calcium-10Hz"))       # camera presets: not built yet
     executor.wait_idle()
     assert any(a.kind == "not_implemented" for a in store.state.alarms)
     store.dispatch(C.StopLive())

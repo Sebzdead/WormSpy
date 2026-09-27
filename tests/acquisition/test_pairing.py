@@ -92,3 +92,11 @@ def test_skew_is_unknown_when_either_frame_is_missing():
     out = pairer.add_clock(_f(0)) + pairer.add_follower(_follower(0))
     out += pairer.add_clock(_f(1)) + pairer.add_clock(_f(2)) + pairer.add_follower(_follower(2))
     assert [p.skew_ns for p in out] == [0, None, 0]
+
+
+def test_the_frame_index_of_a_device_frame_id_is_known_once_acquisition_started():
+    pairer = FramePairer()
+    assert pairer.index_of(100) is None
+    pairer.add_clock(_f(100))
+    assert pairer.index_of(100) == 0 and pairer.index_of(107) == 7
+    assert pairer.index_of(99) is None           # before the first frame: not in this run

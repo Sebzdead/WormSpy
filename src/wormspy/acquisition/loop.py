@@ -46,6 +46,9 @@ class AcquisitionLoop:
             self._emit(self._pairer.add_follower(frame))
         return read
 
+    def index_of(self, device_frame_id: int) -> int | None:
+        return self._pairer.index_of(device_frame_id)
+
     def flush(self) -> None:
         """Resolve everything seen so far; frames still missing count as dropped."""
         self._emit(self._pairer.flush())
