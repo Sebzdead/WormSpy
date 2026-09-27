@@ -10,6 +10,7 @@ class Frame:
     image: np.ndarray
     device_frame_id: int   # camera-provided frame id; -1 if the camera cannot supply one
     capture_ts: float      # time.monotonic() captured as close to the grab as possible
+    device_timestamp_ns: int = -1  # camera's own exposure timestamp (chunk data); -1 if unknown
 
 
 @dataclass

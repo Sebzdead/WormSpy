@@ -8,6 +8,7 @@ authors = [{ name = "Sebastian N. Wittekindt" }]
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.26",
+    "opencv-python-headless>=4.9",
 ]
 
 [project.optional-dependencies]

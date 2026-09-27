@@ -51,3 +51,13 @@ def test_acquired_pair_fields():
     assert pair.capture_ts == 1.5
     assert pair.left.device_frame_id == 0
     assert pair.right is not None
+
+
+def test_frame_device_timestamp_defaults_to_unknown():
+    assert _frame(1).device_timestamp_ns == -1
+
+
+def test_frame_carries_the_camera_device_timestamp():
+    frame = Frame(image=np.zeros((2, 2), np.uint16), device_frame_id=3, capture_ts=0.1,
+                  device_timestamp_ns=100_000_000)
+    assert frame.device_timestamp_ns == 100_000_000
