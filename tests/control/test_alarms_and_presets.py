@@ -90,3 +90,11 @@ def test_a_failed_recording_is_closed_so_its_files_are_finalised():
     t = reduce(_recording(), E.RecordingFailed(reason="Disk full"))
     assert t.effects == (X.CloseRecording(),)
     assert reduce(_live(), E.RecordingFailed(reason="late report")).effects == ()
+
+
+def test_acquisition_failure_stops_a_running_tracker():
+    calibrated = reduce(_live(), E.CalibrationCompleted(residual_px={"bf": 0.1})).state
+    on = reduce(calibrated, C.SetTracking(enabled=True)).state
+    t = reduce(on, E.AcquisitionFailed(reason="USB disconnect"))
+    assert t.effects[0] == X.SetTracker(enabled=False, estimator=on.estimator,
+                                        source_channel=on.source_channel)

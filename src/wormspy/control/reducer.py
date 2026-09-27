@@ -217,7 +217,7 @@ def _recording_failed(s: AppState, ev: E.RecordingFailed) -> Transition:
 
 
 def _acquisition_failed(s: AppState, ev: E.AcquisitionFailed) -> Transition:
-    effects = [X.CloseRecording()] if s.mode is Mode.RECORDING else []
+    effects = [*_disable_tracker(s), *([X.CloseRecording()] if s.mode is Mode.RECORDING else [])]
     s = replace(_end_recording(s, Mode.IDLE), tracking=TrackingStatus.OFF)
     return _ok(_with_alarm(s, "acquisition_failed", f"Acquisition stopped: {ev.reason}"),
                *effects)

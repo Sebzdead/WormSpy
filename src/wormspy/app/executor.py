@@ -10,6 +10,7 @@ ignored.
 
 import queue
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from wormspy.acquisition.loop import AcquisitionLoop
@@ -19,15 +20,20 @@ from wormspy.acquisition.rig import RigHandle
 from wormspy.acquisition.session import create_session
 from wormspy.acquisition.stage_poller import StagePoller, StageTelemetry
 from wormspy.calibration.routine import CalibrationError, RigCalibration, run_calibration
-from wormspy.control import StateStore
+from wormspy.control import StateStore, TrackingStatus
 from wormspy.control import effects as X
 from wormspy.control import events as E
 from wormspy.core.frames import FrameHub
+from wormspy.tracking.controller import ServoConfig
+from wormspy.tracking.estimators import BrightMarker, DarkObject
+from wormspy.tracking.tracker import Tracker
 
 
 class Executor:
     def __init__(self, store: StateStore, rig: RigHandle, hub: FrameHub, data_root: Path,
-                 calibration_path: Path | None = None, recorder_queue_size: int = 64) -> None:
+                 calibration_path: Path | None = None, recorder_queue_size: int = 64,
+                 estimators: dict | None = None, servo: ServoConfig | None = None,
+                 override: Callable[[], bool] = lambda: False) -> None:
         self._store = store
         self._rig = rig
         self._hub = hub
@@ -35,6 +41,11 @@ class Executor:
         self._recorder_queue_size = recorder_queue_size
         self._calibration_path = None if calibration_path is None else Path(calibration_path)
         self._calibration: RigCalibration | None = None
+        self._estimators = estimators if estimators is not None else {
+            "dark_object": DarkObject(), "bright_marker": BrightMarker()}
+        self._servo = servo if servo is not None else ServoConfig()
+        self._override = override          # True while the joystick is moving XY
+        self._tracker: Tracker | None = None
         self._loop: AcquisitionLoop | None = None
         self._recorder: Recorder | None = None
         self._recorder_lock = threading.Lock()
@@ -52,6 +63,7 @@ class Executor:
             X.MoveZTo: self._move_z_to,
             X.RunCalibration: self._run_calibration,
             X.CentreOn: self._centre_on,
+            X.SetTracker: self._set_tracker,
         }
         threading.Thread(target=self._run, name="executor", daemon=True).start()
         store.on_effect(self._effects.put)
@@ -98,6 +110,7 @@ class Executor:
             self._store.dispatch(E.AcquisitionFailed(reason=f"{type(exc).__name__}: {exc}"))
 
     def _stop_acquisition(self, _: X.StopAcquisition) -> None:
+        self._stop_tracker()                  # safety net; the reducer normally did this first
         self._rig.stop()
         if self._loop is not None:
             self._loop.stop()             # flushes the last pairs to the recorder, if any
@@ -192,3 +205,52 @@ class Executor:
         stage = self._rig.stage
         stage.move_absolute_um("x", stage.position_um("x") + dx)
         stage.move_absolute_um("y", stage.position_um("y") + dy)
+
+    # --- tracking (ADR 0008) ------------------------------------------------------------
+
+    def _set_tracker(self, effect: X.SetTracker) -> None:
+        self._stop_tracker()
+        if not effect.enabled:
+            return
+        channel = self._resolve_channel(effect.source_channel)
+        estimator = self._estimators.get(effect.estimator)
+        camera = None if self._calibration is None else self._calibration.cameras.get(channel)
+        if channel is None or estimator is None or camera is None:
+            missing = ("channel" if channel is None else
+                       "estimator" if estimator is None else "calibration")
+            self._store.dispatch(E.AlarmRaised(
+                kind="tracking_failed",
+                message=f"Cannot track ({missing} unavailable for {effect.source_channel!r} / "
+                        f"{effect.estimator!r})."))
+            self._store.dispatch(E.TrackingStatusChanged(status=TrackingStatus.OFF))
+            return
+        self._tracker = Tracker(
+            hub=self._hub, poller=self.poller, stage=self._rig.stage, calibration=camera,
+            source_channel=channel, estimator=estimator, config=self._servo,
+            dispatch=self._store.dispatch, now=self._rig.now,
+            index_of=lambda frame_id: None if self._loop is None else self._loop.index_of(frame_id),
+            log=self._log_tracking, override=self._override)
+        self._tracker.start()
+
+    def _stop_tracker(self) -> None:
+        tracker, self._tracker = self._tracker, None
+        if tracker is not None:
+            tracker.stop()
+
+    def _resolve_channel(self, name_or_role: str) -> str | None:
+        """A channel name, or a role ("behaviour"/"fluorescence") -> the first camera with it
+        (the clock camera first, so ratiometric sessions track on the calcium channel)."""
+        channels = (self._rig.clock_channel, self._rig.follower_channel)
+        for ch in channels:
+            if ch.name == name_or_role:
+                return ch.name
+        for ch in channels:
+            if ch.role == name_or_role:
+                return ch.name
+        return None
+
+    def _log_tracking(self, **row) -> None:                    # tracker thread
+        with self._recorder_lock:
+            recorder = self._recorder
+        if recorder is not None:
+            recorder.log_tracking(**row)

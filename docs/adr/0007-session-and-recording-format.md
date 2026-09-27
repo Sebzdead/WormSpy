@@ -26,6 +26,7 @@ experiment used the second camera as a DsRed fluorescence channel for ratiometry
     <channel>.tif      (fluorescence role) # raw uint16 BigTIFF, appended per frame
     <channel>.mkv      (behaviour role)    # FFV1 lossless, 8-bit, intra-frame
     frames.csv                             # per-frame CSV, appended per frame
+    tracking.csv                           # one row per frame the tracker evaluated
     recording.json                         # start/stop times, frame count, drop summary
   rec-002/ …
 ```
@@ -43,15 +44,25 @@ last few rows. Columns:
   same as its file stem. Then `pair_skew_ns`: the follower-minus-clock timestamp offset relative to
   the first pair. A large value means the pairing is suspect.
 - **Position:** stage `x_um`, `y_um`, `z_um`, interpolated to frame time from a fixed-rate stage
-  poller; `worm_x_um`, `worm_y_um` (world/plate position, using calibration); `target_px_x`,
-  `target_px_y`.
-- **Tracking:** `tracking_state` (off / tracking / lost / override / limit), `estimator`,
-  `source_channel`.
-- **Focus:** `z_moved`, `focus_set_z`.
+  poller.
+- **Focus:** `z_moved`, `focus_set_z_um`.
 - **Events:** `event` (operator marker label).
 - **Reserved, empty in v1:** `stim_state`, `stim_param`, for closed-loop optogenetics.
 
 A drop produces a gap row instead of a missing row.
+
+**`tracking.csv` (amended 2026-09-27).** Tracking results are logged separately, because the
+tracker runs on its own thread and may lag the recorder, or skip frames when busy. It has one row
+per frame the tracker evaluated, joined to `frames.csv` on `frame_index`. The columns are:
+
+- `frame_index`, `source_channel`, `frame_id`, `capture_ts`, `estimator`
+- `target_px_x`, `target_px_y`: the tracked point in the source image
+- `worm_x_um`, `worm_y_um`: its plate position, from the stage position at capture time plus the
+  calibrated offset
+- `accepted`: 0 when nothing was found or the estimate was rejected as implausible
+- `status`: tracking / lost / override / limit
+
+The tracking columns originally listed for `frames.csv` live here instead.
 
 **Operator metadata** is a light, configurable form: operator, animal/strain ID, condition and
 free notes, pre-filled from the previous session.

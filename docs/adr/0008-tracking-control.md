@@ -53,3 +53,35 @@ and stage jerk blurs frames and couples into the calcium signal.
   (ADR 0011), then on the rig.
 - Stage position comes from a single poller thread, so neither the tracker nor acquisition ever
   blocks on serial I/O.
+
+## Implementation (2026-09-27)
+
+- **Estimators** (`wormspy.tracking.estimators`):
+  - **DarkObject** measures contrast against a heavily blurred background, computed at a coarse
+    scale. It is robust to uneven illumination and takes about 4 ms per 1920×1200 frame.
+  - **BrightMarker** thresholds at median + k·MAD of the frame's own noise, so a noise-only frame
+    yields no target. It finds the intensity-weighted centroid and takes about 12 ms per frame.
+- **Controller** (`wormspy.tracking.controller`):
+  - `TargetFilter` does plausibility gating (`jump_margin + max_worm_speed × Δt`), declares *lost*
+    after three misses, and re-acquires with a search radius that grows with time since the worm
+    was last seen.
+  - `VelocityServo` does proportional control toward the absolute target with a deadband, a speed
+    cap and an acceleration limit. It also includes **velocity feed-forward**, which this ADR did
+    not originally specify: the filter estimates the worm's velocity and the servo follows it.
+    That removes the proportional lag (speed ÷ gain).
+- **Measured on the simulated rig** (8 worms × 60 s at 200 µm/s, with reversals):
+  - median centring error drops from ~100 µm to ~17 µm with feed-forward
+  - worst case drops from 273 µm to 163 µm, in a 1440 × 900 µm field of view
+  - zero lost events
+- **Tracker thread** (`wormspy.tracking.tracker`):
+  - It evaluates the newest frame of the source channel, stepping at 50 Hz, and skips frames when
+    the frame rate is higher than that.
+  - It converts pixels to plate position using the stage position at capture time.
+  - It logs each evaluated frame to `tracking.csv` (ADR 0007).
+  - It sends XY velocity only on meaningful change.
+  - It reports status changes to the state machine.
+- **Tracking requires a calibration.** The source channel may be named directly, or given as a role
+  ("behaviour"/"fluorescence"), which resolves to the clock camera first. Acquisition failure,
+  Stop Live and Shutdown all stop the tracker, which stops the stage.
+- **Tuning** (`ServoConfig` defaults: gain 2 s⁻¹, deadband 10 µm, max speed 1500 µm/s, max
+  acceleration 3000 µm/s²) was done in simulation only. Re-check it on the rig.
