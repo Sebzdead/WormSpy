@@ -1,0 +1,110 @@
+"""LiveView: one channel's image with histogram, fixed levels, LUT, overlays (ADR 0004)."""
+
+import numpy as np
+import pytest
+
+from wormspy.core.frames import Frame, FrameHub
+from wormspy.ui.live_view import LiveView
+
+
+def _publish(hub, channel, image, fid):
+    hub.publish(channel, Frame(image=image, device_frame_id=fid, capture_ts=fid / 10))
+
+
+def _view(qtbot, hub, channel="gcamp"):
+    view = LiveView(hub, channel=channel, title=channel)
+    qtbot.addWidget(view)
+    return view
+
+
+def test_refresh_without_frames_does_nothing(qtbot):
+    assert _view(qtbot, FrameHub()).refresh() is False
+
+
+def test_refresh_shows_each_new_frame_once(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub)
+    _publish(hub, "gcamp", np.full((20, 30), 1000, np.uint16), 1)
+    assert view.refresh() is True
+    assert view.refresh() is False                        # same frame: no redraw
+    assert view.image.shape == (20, 30)
+
+
+def test_16bit_levels_are_set_once_then_never_auto_stretched(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub)
+    rng = np.random.default_rng(0)
+    _publish(hub, "gcamp", rng.integers(1000, 2000, (20, 30), dtype=np.uint16), 1)
+    view.refresh()
+    first = view.levels
+    assert 900 <= first[0] < first[1] <= 2100
+    _publish(hub, "gcamp", rng.integers(20000, 40000, (20, 30), dtype=np.uint16), 2)
+    view.refresh()
+    assert view.levels == first                           # a brighter frame must look brighter
+
+
+def test_8bit_views_start_at_the_full_range(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub, "bf")
+    _publish(hub, "bf", np.full((20, 30), 120, np.uint8), 1)
+    view.refresh()
+    assert view.levels == (0.0, 255.0)
+
+
+def test_auto_levels_on_request_only(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub, "bf")
+    _publish(hub, "bf", np.linspace(50, 150, 600).reshape(20, 30).astype(np.uint8), 1)
+    view.refresh()
+    view.auto_levels()
+    lo, hi = view.levels
+    assert 45 <= lo < 60 and 140 < hi <= 155
+
+
+def test_saturated_pixels_are_reported(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub)
+    image = np.full((10, 10), 500, np.uint16)
+    image[0, :5] = 65535
+    _publish(hub, "gcamp", image, 1)
+    view.refresh()
+    assert view.saturated_fraction == pytest.approx(0.05)
+    assert "5.0%" in view.saturation_label.text()
+
+
+def test_double_click_asks_to_centre_that_pixel(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub)
+    _publish(hub, "gcamp", np.zeros((40, 60), np.uint16), 1)
+    view.refresh()
+    with qtbot.waitSignal(view.centre_requested) as blocker:
+        view.request_centre_at_scene(view.image_item.mapToScene(42.5, 17.5))
+    assert blocker.args == pytest.approx([42.5, 17.5], abs=0.01)
+
+
+def test_tracking_overlay_marks_the_tracked_point(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub)
+    view.set_tracked_point((12.0, 8.0))
+    assert view.tracked_point == (12.0, 8.0)
+    view.set_tracked_point(None)
+    assert view.tracked_point is None
+
+
+def test_the_mask_overlay_can_be_toggled(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub)
+    mask = np.zeros((20, 30), bool)
+    mask[5:10, 5:10] = True
+    view.set_mask(mask)
+    assert view.mask_visible is False                     # off by default
+    view.show_mask(True)
+    assert view.mask_visible is True
+
+
+def test_luts_can_be_switched(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub)
+    assert "inferno" in view.available_luts() and "grey" in view.available_luts()
+    view.set_lut("inferno")
+    assert view.lut_name == "inferno"

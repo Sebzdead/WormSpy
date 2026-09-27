@@ -22,7 +22,10 @@ gamepad = ["pygame>=2.5"]
 
 [dependency-groups]
 dev = [
+    "pyqtgraph>=0.13",
+    "pyside6>=6.7",
     "pytest>=8",
+    "pytest-qt>=4.4",
     "ruff>=0.6",
     "zaber-motion>=10.1.0",
 ]
@@ -37,6 +40,7 @@ packages = ["src/wormspy"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+qt_api = "pyside6"
 
 [tool.ruff]
 line-length = 100
