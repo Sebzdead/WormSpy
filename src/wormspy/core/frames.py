@@ -13,15 +13,6 @@ class Frame:
     device_timestamp_ns: int = -1  # camera's own exposure timestamp (chunk data); -1 if unknown
 
 
-@dataclass
-class AcquiredPair:
-    """One acquisition tick: a brightfield and a fluorescence frame sharing an index."""
-    frame_index: int       # monotonic counter assigned by the engine, contiguous, never reused
-    capture_ts: float      # engine timestamp for the tick (time.monotonic())
-    left: Frame | None  # brightfield/behaviour; None if that grab failed this tick
-    right: Frame | None # fluorescence/calcium; None if that grab failed this tick
-
-
 class FrameHub:
     """Thread-safe store of the latest frame per named stream, for display and tracking."""
 

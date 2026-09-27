@@ -8,14 +8,13 @@ authors = [{ name = "Sebastian N. Wittekindt" }]
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.26",
-    "opencv-python-headless>=4.9",
+    "opencv-python-headless>=4.9",  # also writes FFV1 (behaviour channel), see ADR 0007
+    "tifffile>=2024.1",
 ]
 
 [project.optional-dependencies]
 # Desktop UI (ADR 0004)
 ui = ["PySide6>=6.7", "pyqtgraph>=0.13"]
-# Recording writers (ADR 0007)
-io = ["tifffile>=2024.1", "av>=12"]
 # Hardware adapters (ADR 0005). PySpin is not on PyPI: install the wheel shipped with the
 # Spinnaker SDK into the environment (`uv pip install <spinnaker_python-*.whl>`).
 zaber = ["zaber-motion>=7"]

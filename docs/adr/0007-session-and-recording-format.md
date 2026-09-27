@@ -62,6 +62,11 @@ ported later as an example, fixing its dead jump-filter bug on the way.
 
 - Every file is self-describing and frame-accurate. The hand-typed `FPS` constant and wall-clock
   file names go away.
-- Needs ffmpeg with FFV1 on the rig PC (bundled via PyAV/imageio-ffmpeg).
+- FFV1 is written through OpenCV's bundled FFmpeg (`cv2.VideoWriter`, fourcc `FFV1`, `.mkv`).
+  Checked on 2026-09-27: lossless round trip, exact frame count, frame-exact seeking. PyAV is
+  deliberately **not** used. It bundles a second FFmpeg, and loading both in one process
+  triggers duplicate-library warnings on macOS that risk crashes.
+- A dropped frame is written as a zero-filled placeholder page or frame, flagged in
+  `frames.csv`, so page *i* of every channel file always matches CSV row *i*.
 - Disk throughput: 1920×1200 at 16 bits and 10 Hz is about 46 MB/s per fluorescence channel.
   Free disk space is shown in the UI.

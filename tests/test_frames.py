@@ -2,7 +2,7 @@ import threading
 
 import numpy as np
 
-from wormspy.core.frames import AcquiredPair, Frame, FrameHub
+from wormspy.core.frames import Frame, FrameHub
 
 
 def _frame(val, fid=0, ts=0.0):
@@ -43,14 +43,6 @@ def test_hub_is_thread_safe_under_concurrent_writes():
     for t in threads:
         t.join()
     assert hub.latest("left") is not None
-
-
-def test_acquired_pair_fields():
-    pair = AcquiredPair(frame_index=7, capture_ts=1.5, left=_frame(1), right=_frame(2))
-    assert pair.frame_index == 7
-    assert pair.capture_ts == 1.5
-    assert pair.left.device_frame_id == 0
-    assert pair.right is not None
 
 
 def test_frame_device_timestamp_defaults_to_unknown():
