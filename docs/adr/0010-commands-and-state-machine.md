@@ -30,6 +30,35 @@ threads caused races, including recordings split across two folders.
 - The gamepad XY and Z sticks are continuous inputs routed through the `Stage` interface, so they
   pass through the same safe-range clamping and override logic as tracking (ADR 0008).
 
+## Implementation (2026-09-27)
+
+- **Pure reducer.** `reduce(state, message) -> Transition(state, effects, rejected)` lives in
+  `wormspy.control`.
+  - **Commands** are operator intents and may be rejected. A rejection carries a reason for the UI.
+  - **Events** are facts from the executor or workers.
+  - **Effects** are requests for the executor.
+
+  Anything whose outcome is only known after I/O takes a round trip: create the session folder, or
+  read Z for Set Focus. The request goes out as an Effect and the result comes back as an Event.
+- **`StateStore`** serialises dispatch under a lock and calls listeners outside it, so executors can
+  report back synchronously. State deliveries are versioned, so subscribers never see an older state
+  after a newer one.
+- **Operator-visible rules chosen during implementation:**
+  - Stop Live, New Session and Apply Preset are refused while recording.
+  - Recording needs an open session.
+  - The estimator can only be changed while tracking is off.
+  - Event markers can only be placed while recording.
+  - Stopping live, shutting down, or losing acquisition switches the tracker off first.
+  - A tracker report that arrives after tracking was switched off is ignored.
+  - Dropped frames raise one `frames_dropped` alarm, which is updated in place with the running
+    count for the current recording.
+- **Failures roll the state back.**
+  - `RecordingFailed` returns the app to Live and raises an alarm.
+  - `AcquisitionFailed` returns it to Idle. If a recording was open, it also closes the recording
+    so the data already written is finalised.
+  - A recording's number is consumed whenever the recording ends, even by failure, so a partly
+    written `rec-NNN` folder is never reused.
+
 ## Consequences
 
 - The UI can't misrepresent the hardware, and every control path is the same code path.

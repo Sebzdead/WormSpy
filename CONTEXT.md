@@ -113,6 +113,15 @@ code and ADRs (`docs/adr/`), not here. Scope of the rework: `docs/rework/require
   focus, mark event, centre point, …). The gamepad, keyboard shortcuts and UI buttons all issue the
   *same* commands to a single **state machine**. The UI only renders that state machine's state, so the UI and the
   hardware cannot disagree.
+- **Event**: a fact reported *to* the state machine by the executor or a worker, e.g. session
+  folder created, frames dropped, tracker lost the target, recording failed. Events cannot be
+  rejected. Commands can.
+- **Effect**: a side effect the state machine *asks for*, e.g. start acquisition, open a recording,
+  move Z. The state machine never touches hardware or files itself.
+- **Executor**: the component that carries out Effects on the hardware and filesystem, and reports
+  the outcomes back as Events.
+- **Alarm**: a condition the operator must see, e.g. dropped frames, a failed recording, or low disk
+  space. There is at most one alarm per kind. It stays until acknowledged or cleared by its source.
 - **Click-to-centre**: double-clicking a point on either live view moves the stage so that point sits at the
   centre of the field of view (uses calibration).
 
