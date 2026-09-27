@@ -82,3 +82,9 @@ def test_a_failed_recording_never_reuses_its_folder_name():
     state = reduce(_recording(), E.RecordingFailed(reason="Disk full")).state
     t = reduce(state, C.StartRecording())
     assert t.effects == (X.OpenRecording(session_dir="/data/s", name="rec-002"),)
+
+
+def test_a_failed_recording_is_closed_so_its_files_are_finalised():
+    t = reduce(_recording(), E.RecordingFailed(reason="Disk full"))
+    assert t.effects == (X.CloseRecording(),)
+    assert reduce(_live(), E.RecordingFailed(reason="late report")).effects == ()

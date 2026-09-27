@@ -1,0 +1,157 @@
+"""Executor, end to end on the simulated rig: commands -> effects -> files on disk."""
+
+import csv
+import json
+import time
+from pathlib import Path
+
+import cv2
+import tifffile
+
+from wormspy.app.executor import Executor
+from wormspy.control import AppState, Mode, StateStore
+from wormspy.control import commands as C
+from wormspy.core.frames import FrameHub
+from wormspy.sim.handle import SimRigHandle
+from wormspy.sim.render import ImageGeometry
+from wormspy.sim.rig import ChannelSpec, SimRig
+from wormspy.sim.stage import SimStage
+from wormspy.sim.worm import SyntheticWorm
+
+GEOM = ImageGeometry(width_px=48, height_px=32, um_per_px=30.0)
+
+
+def _app(tmp_path, clock_drops=(), speed=10.0):
+    stage = SimStage({a: (0.0, 1e7) for a in "xyz"}, 20.0, 1000.0, {"x": 0.0, "y": 0.0, "z": 0.0})
+    rig = SimRig(SyntheticWorm(seed=0), stage, ChannelSpec(GEOM, "fluorescence"),
+                 ChannelSpec(GEOM, "behaviour"), fps=20.0, clock_drops=clock_drops)
+    handle = SimRigHandle(rig, clock_name="gcamp", follower_name="bf", speed=speed)
+    store, hub = StateStore(AppState()), FrameHub()
+    executor = Executor(store, handle, hub, data_root=tmp_path / "data")
+    return store, hub, executor, handle
+
+
+def _wait(condition, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.01)
+
+
+def _record(store, executor, hub, frames=30):
+    store.dispatch(C.StartLive())
+    store.dispatch(C.NewSession(metadata={"animal_id": "w1"}))
+    _wait(lambda: store.state.session_dir is not None)
+    store.dispatch(C.StartRecording())
+    executor.wait_idle()
+    start = hub.latest("gcamp").device_frame_id
+    _wait(lambda: hub.latest("gcamp").device_frame_id >= start + frames)
+    store.dispatch(C.StopRecording())
+    executor.wait_idle()
+    return Path(store.state.session_dir) / "rec-001"
+
+
+def _mkv_frames(path):
+    cap, n = cv2.VideoCapture(str(path)), 0
+    while cap.read()[0]:
+        n += 1
+    return n
+
+
+def test_live_view_publishes_frames_to_the_hub(tmp_path):
+    store, hub, executor, _ = _app(tmp_path)
+    store.dispatch(C.StartLive())
+    _wait(lambda: hub.latest("gcamp") is not None and hub.latest("bf") is not None)
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+
+
+def test_new_session_creates_the_folder_and_opens_it(tmp_path):
+    store, _, executor, _ = _app(tmp_path)
+    store.dispatch(C.NewSession(metadata={"animal_id": "w1"}))
+    executor.wait_idle()
+    session = Path(store.state.session_dir)
+    assert session.parent == tmp_path / "data" and (session / "session.json").exists()
+
+
+def test_a_recording_writes_aligned_files(tmp_path):
+    store, hub, executor, _ = _app(tmp_path)
+    rec = _record(store, executor, hub)
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+    with open(rec / "frames.csv", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    pages = tifffile.imread(rec / "gcamp.tif").shape[0]
+    assert len(rows) >= 30
+    assert pages == len(rows) == _mkv_frames(rec / "bf.mkv")
+    indices = [int(r["frame_index"]) for r in rows]
+    assert indices == list(range(indices[0], indices[0] + len(rows)))   # contiguous
+    assert json.loads((rec / "recording.json").read_text())["frames"] == len(rows)
+
+
+def test_camera_drops_reach_the_state_and_the_csv(tmp_path):
+    store, hub, executor, _ = _app(tmp_path, clock_drops=set(range(0, 10_000, 7)))
+    rec = _record(store, executor, hub)
+    assert store.state.recording_drops > 0
+    assert any(a.kind == "frames_dropped" for a in store.state.alarms)
+    with open(rec / "frames.csv", newline="") as fh:
+        assert any(r["gcamp_dropped"] == "1" for r in csv.DictReader(fh))
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+
+
+def test_event_markers_are_written_into_the_recording(tmp_path):
+    store, hub, executor, _ = _app(tmp_path)
+    store.dispatch(C.StartLive())
+    store.dispatch(C.NewSession(metadata={"animal_id": "w1"}))
+    _wait(lambda: store.state.session_dir is not None)
+    store.dispatch(C.StartRecording())
+    executor.wait_idle()
+    store.dispatch(C.MarkEvent(label="glycerol"))
+    executor.wait_idle()
+    start = hub.latest("gcamp").device_frame_id
+    _wait(lambda: hub.latest("gcamp").device_frame_id >= start + 5)
+    store.dispatch(C.StopRecording())
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+    with open(Path(store.state.session_dir) / "rec-001" / "frames.csv", newline="") as fh:
+        assert [r["event"] for r in csv.DictReader(fh) if r["event"]] == ["glycerol"]
+
+
+def test_a_recording_that_cannot_open_returns_to_live_with_an_alarm(tmp_path):
+    store, _, executor, _ = _app(tmp_path)
+    store.dispatch(C.StartLive())
+    store.dispatch(C.NewSession(metadata={"animal_id": "w1"}))
+    _wait(lambda: store.state.session_dir is not None)
+    (Path(store.state.session_dir) / "rec-001").mkdir()      # folder already taken
+    store.dispatch(C.StartRecording())
+    executor.wait_idle()
+    assert store.state.mode is Mode.LIVE
+    assert any(a.kind == "recording_failed" for a in store.state.alarms)
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+
+
+def test_camera_failure_while_recording_finalises_the_files_and_goes_idle(tmp_path):
+    store, hub, executor, handle = _app(tmp_path)
+    store.dispatch(C.StartLive())
+    store.dispatch(C.NewSession(metadata={"animal_id": "w1"}))
+    _wait(lambda: store.state.session_dir is not None)
+    store.dispatch(C.StartRecording())
+    executor.wait_idle()
+    _wait(lambda: hub.latest("gcamp") is not None)
+    handle.fail_camera("USB disconnect")
+    _wait(lambda: store.state.mode is Mode.IDLE)
+    executor.wait_idle()
+    assert any(a.kind == "acquisition_failed" for a in store.state.alarms)
+    assert (Path(store.state.session_dir) / "rec-001" / "recording.json").exists()
+
+
+def test_effects_not_built_yet_raise_a_visible_alarm(tmp_path):
+    store, _, executor, _ = _app(tmp_path)
+    store.dispatch(C.StartLive())
+    store.dispatch(C.SetTracking(enabled=True))
+    executor.wait_idle()
+    assert any(a.kind == "not_implemented" for a in store.state.alarms)
+    store.dispatch(C.StopLive())
+    executor.wait_idle()

@@ -195,9 +195,11 @@ def _acknowledge_alarm(s: AppState, cmd: C.AcknowledgeAlarm) -> Transition:
 
 
 def _recording_failed(s: AppState, ev: E.RecordingFailed) -> Transition:
+    effects = []
     if s.mode is Mode.RECORDING:
         s = _end_recording(s, Mode.LIVE)
-    return _ok(_with_alarm(s, "recording_failed", f"Recording stopped: {ev.reason}"))
+        effects.append(X.CloseRecording())   # finalise whatever was written
+    return _ok(_with_alarm(s, "recording_failed", f"Recording stopped: {ev.reason}"), *effects)
 
 
 def _acquisition_failed(s: AppState, ev: E.AcquisitionFailed) -> Transition:

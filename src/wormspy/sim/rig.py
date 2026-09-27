@@ -40,13 +40,20 @@ class SimCamera(Camera):
     def __init__(self) -> None:
         self._queue: deque[Frame] = deque()
         self._open = True
+        self._failure: str | None = None
 
     def deliver(self, frame: Frame) -> None:
         if self._open:
             self._queue.append(frame)
 
     def read(self) -> Frame | None:
+        if self._failure is not None:
+            raise RuntimeError(self._failure)
         return self._queue.popleft() if self._queue else None
+
+    def fail(self, reason: str) -> None:
+        """Make every later read raise, like a camera that has been disconnected."""
+        self._failure = reason
 
     def is_open(self) -> bool:
         return self._open
@@ -65,12 +72,17 @@ class SimRig:
         self.stage = stage
         self.clock_camera = SimCamera()
         self.follower_camera = SimCamera()
+        self.clock_spec, self.follower_spec = clock, follower
         self._channels = ((self.clock_camera, clock, set(clock_drops), 0),
                           (self.follower_camera, follower, set(follower_drops),
                            follower_offset_ns))
         self._period_ns = round(1e9 / fps)
         self._frame_id = 0
         self._rng = np.random.default_rng(seed)
+
+    @property
+    def frame_period_s(self) -> float:
+        return self._period_ns / 1e9
 
     @property
     def time_s(self) -> float:

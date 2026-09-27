@@ -82,3 +82,10 @@ def test_stage_position_closes_the_loop_on_the_rendered_image():
     rows, cols = np.nonzero(image < 128)
     assert abs(cols.mean() - GEOM.width_px / 2) < 10
     assert abs(rows.mean() - GEOM.height_px / 2) < 10
+
+
+def test_a_failed_sim_camera_raises_on_read_like_a_disconnected_camera():
+    rig = _rig()
+    rig.clock_camera.fail("USB disconnect")
+    with pytest.raises(RuntimeError, match="USB disconnect"):
+        rig.clock_camera.read()
