@@ -1,83 +1,75 @@
+"""The Stage interface, in µm (ADR 0005). Axes are "x", "y" and "z".
+
+Every move is clamped to the axis's configured safe range (`limits_um`). Moves never block: an
+absolute move sets a target, and a velocity move runs until `stop()` or until it reaches the edge
+of the safe range. Adapters wrap real hardware (Zaber) or simulate it (SimStage).
+"""
+
 from abc import ABC, abstractmethod
 
+LIMIT_TOLERANCE_UM = 1.0
 
-def clamp_native(value: float, minimum: float, maximum: float) -> tuple[float, bool]:
-    """Clamp value into [minimum, maximum]. Returns (clamped_value, limit_was_hit)."""
-    if value > maximum:
-        return maximum, True
-    if value < minimum:
-        return minimum, True
+
+def clamp(value: float, lo: float, hi: float) -> tuple[float, bool]:
+    """Clamp value into [lo, hi]. Returns (clamped_value, limit_was_hit)."""
+    if value > hi:
+        return hi, True
+    if value < lo:
+        return lo, True
     return value, False
 
 
 class Stage(ABC):
-    """XYZ stage interface in native (microstep) units. Adapters wrap real hardware."""
+    @abstractmethod
+    def is_connected(self) -> bool: ...
 
     @abstractmethod
-    def is_connected(self) -> bool:
-        ...
+    def position_um(self, axis: str) -> float: ...
 
     @abstractmethod
-    def get_position(self, axis: str) -> float:
-        ...
+    def limits_um(self, axis: str) -> tuple[float, float]:
+        """The axis's safe range."""
 
     @abstractmethod
-    def limits(self, axis: str) -> tuple[float, float]:
-        ...
+    def move_absolute_um(self, axis: str, target_um: float) -> bool:
+        """Start moving to target (clamped to the safe range). True if it was clamped."""
 
     @abstractmethod
-    def move_relative(self, axis: str, native: float) -> bool:
-        """Move axis by `native` microsteps, clamped to limits. Returns True if a limit was hit."""
+    def move_velocity_um_s(self, axis: str, velocity_um_s: float) -> None:
+        """Move at constant velocity until stop() or the edge of the safe range. 0 stops."""
 
     @abstractmethod
-    def move_absolute(self, axis: str, native: float) -> bool:
-        """Move axis to absolute `native` microsteps, clamped to limits. Returns True if hit."""
+    def stop(self, axis: str) -> None: ...
+
+    def move_relative_um(self, axis: str, delta_um: float) -> bool:
+        return self.move_absolute_um(axis, self.position_um(axis) + delta_um)
+
+    def at_limit(self, axis: str) -> bool:
+        lo, hi = self.limits_um(axis)
+        position = self.position_um(axis)
+        return position <= lo + LIMIT_TOLERANCE_UM or position >= hi - LIMIT_TOLERANCE_UM
 
 
 class NullStage(Stage):
-    """Used when no hardware is present so the app still runs. All moves are no-ops."""
+    """Used when no stage hardware is present, so the app still runs. Every move is a no-op."""
 
     def is_connected(self) -> bool:
         return False
 
-    def get_position(self, axis: str) -> float:
+    def position_um(self, axis: str) -> float:
         return 0.0
 
-    def limits(self, axis: str) -> tuple[float, float]:
+    def limits_um(self, axis: str) -> tuple[float, float]:
         return (0.0, 0.0)
 
-    def move_relative(self, axis: str, native: float) -> bool:
+    def move_absolute_um(self, axis: str, target_um: float) -> bool:
         return False
 
-    def move_absolute(self, axis: str, native: float) -> bool:
+    def move_velocity_um_s(self, axis: str, velocity_um_s: float) -> None:
+        pass
+
+    def stop(self, axis: str) -> None:
+        pass
+
+    def at_limit(self, axis: str) -> bool:
         return False
-
-
-class FakeStage(Stage):
-    """In-memory stage for tests. Honors limits via clamp_native."""
-
-    def __init__(self, limits: dict[str, tuple[float, float]],
-                 positions: dict[str, float]) -> None:
-        self._limits = dict(limits)
-        self._pos = dict(positions)
-
-    def is_connected(self) -> bool:
-        return True
-
-    def get_position(self, axis: str) -> float:
-        return self._pos[axis]
-
-    def limits(self, axis: str) -> tuple[float, float]:
-        return self._limits[axis]
-
-    def move_relative(self, axis: str, native: float) -> bool:
-        lo, hi = self._limits[axis]
-        target, hit = clamp_native(self._pos[axis] + native, lo, hi)
-        self._pos[axis] = target
-        return hit
-
-    def move_absolute(self, axis: str, native: float) -> bool:
-        lo, hi = self._limits[axis]
-        target, hit = clamp_native(native, lo, hi)
-        self._pos[axis] = target
-        return hit

@@ -1,72 +1,79 @@
-"""Zaber hardware adapter. Imports zaber_motion lazily so tests never load the SDK."""
+"""Zaber stage adapter (ADR 0005). zaber-motion is imported lazily so the app runs without it.
+
+Works in µm; zaber-motion converts to microsteps using its device database. At construction
+each axis's safe range is written into the controller's `limit.min`/`limit.max`, so the firmware
+itself stops velocity moves at the edge even if the app hangs. Software also clamps.
+"""
 
 from collections.abc import Callable
 
-from wormspy.core.stage import NullStage, Stage, clamp_native
+from wormspy.core.stage import NullStage, Stage, clamp
 
 
 class ZaberStage(Stage):
-    """Wraps three Zaber axes (x, y on the XY connection; z on the Z connection).
+    def __init__(self, axes: dict, safe_ranges_um: dict[str, tuple[float, float]],
+                 max_speed_um_s: float, connections: tuple = ()) -> None:
+        from zaber_motion import Units  # lazy: only needed with hardware (or its tests)
+        self._units = Units
+        self._axes = axes
+        self._limits = dict(safe_ranges_um)
+        self._max_speed = max_speed_um_s
+        self._connections = connections
+        for name, axis in self._axes.items():
+            lo, hi = self._limits[name]
+            axis.settings.set("limit.min", lo, unit=Units.LENGTH_MICROMETRES)
+            axis.settings.set("limit.max", hi, unit=Units.LENGTH_MICROMETRES)
 
-    Connections are opened once at construction and held for the process lifetime."""
-
-    def __init__(self, xy_port: str, z_port: str) -> None:
-        from zaber_motion import Library  # lazy import
+    @classmethod
+    def connect(cls, xy_port: str, z_port: str, safe_ranges_um: dict[str, tuple[float, float]],
+                max_speed_um_s: float) -> "ZaberStage":
+        """The rig's wiring: XY controllers are devices 1 (x) and 2 (y) on one port, Z is
+        device 1 on another. Verified manually on the rig, not in CI."""
+        from zaber_motion import Library
         from zaber_motion.ascii import Connection
         Library.enable_device_db_store()
+        xy, z = Connection.open_serial_port(xy_port), Connection.open_serial_port(z_port)
+        horizontal, vertical = xy.detect_devices(), z.detect_devices()
+        axes = {"x": horizontal[0].get_axis(1), "y": horizontal[1].get_axis(1),
+                "z": vertical[0].get_axis(1)}
+        return cls(axes, safe_ranges_um, max_speed_um_s, connections=(xy, z))
 
-        self._xy_conn = Connection.open_serial_port(xy_port)
-        self._z_conn = Connection.open_serial_port(z_port)
-        self._xy_conn.enable_alerts()
-        self._z_conn.enable_alerts()
-
-        horizontal = self._xy_conn.detect_devices()
-        vertical = self._z_conn.detect_devices()
-        self._axes = {
-            "x": horizontal[0].get_axis(1),
-            "y": horizontal[1].get_axis(1),
-            "z": vertical[0].get_axis(1),
-        }
-        self._limits = {
-            name: (float(axis.settings.get("limit.min")),
-                   float(axis.settings.get("limit.max")))
-            for name, axis in self._axes.items()
-        }
+    def close(self) -> None:
+        for connection in self._connections:
+            connection.close()
 
     def is_connected(self) -> bool:
         return True
 
-    def get_position(self, axis: str) -> float:
-        from zaber_motion import Units
-        return float(self._axes[axis].get_position(unit=Units.NATIVE))
+    def position_um(self, axis: str) -> float:
+        return float(self._axes[axis].get_position(unit=self._units.LENGTH_MICROMETRES))
 
-    def limits(self, axis: str) -> tuple[float, float]:
+    def limits_um(self, axis: str) -> tuple[float, float]:
         return self._limits[axis]
 
-    def move_relative(self, axis: str, native: float) -> bool:
-        lo, hi = self._limits[axis]
-        current = self.get_position(axis)
-        target, hit = clamp_native(current + native, lo, hi)
-        delta = int(target - current)
-        if delta != 0:
-            self._axes[axis].generic_command_no_response(f"move rel {delta} 10000 5")
+    def move_absolute_um(self, axis: str, target_um: float) -> bool:
+        target, hit = clamp(target_um, *self._limits[axis])
+        self._axes[axis].move_absolute(target, unit=self._units.LENGTH_MICROMETRES,
+                                       wait_until_idle=False)
         return hit
 
-    def move_absolute(self, axis: str, native: float) -> bool:
-        from zaber_motion import Units
-        lo, hi = self._limits[axis]
-        target, hit = clamp_native(native, lo, hi)
-        self._axes[axis].move_absolute(target, unit=Units.NATIVE, wait_until_idle=False)
-        return hit
+    def move_velocity_um_s(self, axis: str, velocity_um_s: float) -> None:
+        if velocity_um_s == 0:
+            self.stop(axis)
+            return
+        velocity = max(-self._max_speed, min(self._max_speed, velocity_um_s))
+        self._axes[axis].move_velocity(velocity,
+                                       unit=self._units.VELOCITY_MICROMETRES_PER_SECOND)
+
+    def stop(self, axis: str) -> None:
+        self._axes[axis].stop(wait_until_idle=False)
 
 
-def connect_stage(xy_port: str, z_port: str,
-                  connector: Callable[..., Stage] | None = None) -> Stage:
-    """Open the stage once at startup. On any failure, return a NullStage so the server still
-    runs (e.g. for UI/dev work with no hardware). `connector` is injectable for tests."""
-    factory = connector if connector is not None else (lambda **kw: ZaberStage(**kw))
+def connect_stage(connector: Callable[[], Stage]) -> Stage:
+    """Open the stage once at startup. On any failure, return a NullStage so the app still runs
+    (e.g. UI work with no hardware)."""
     try:
-        return factory(xy_port=xy_port, z_port=z_port)
+        return connector()
     except Exception as exc:   # noqa: BLE001 - degrade gracefully on any hardware/SDK error
         print(f"connect_stage: no stage hardware ({exc!r}); using NullStage.")
         return NullStage()

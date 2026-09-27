@@ -451,6 +451,7 @@ zaber = [
 dev = [
     { name = "pytest" },
     { name = "ruff" },
+    { name = "zaber-motion" },
 ]
 
 [package.metadata]
@@ -469,6 +470,7 @@ provides-extras = ["ui", "zaber", "gamepad"]
 dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.6" },
+    { name = "zaber-motion", specifier = ">=10.1.0" },
 ]
 
 [[package]]

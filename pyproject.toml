@@ -21,7 +21,11 @@ zaber = ["zaber-motion>=7"]
 gamepad = ["pygame>=2.5"]
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "zaber-motion>=10.1.0",
+]
 
 [build-system]
 requires = ["hatchling"]

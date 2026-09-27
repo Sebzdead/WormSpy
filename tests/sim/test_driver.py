@@ -12,7 +12,7 @@ GEOM = ImageGeometry(width_px=32, height_px=24, um_per_px=40.0)
 
 
 def _rig(fps=50.0):
-    stage = SimStage({a: (0.0, 1e7) for a in "xyz"}, 20.0, 1000.0, {"x": 0.0, "y": 0.0, "z": 0.0})
+    stage = SimStage({a: (0.0, 1e7) for a in "xyz"}, 1000.0, {"x": 0.0, "y": 0.0, "z": 0.0})
     return SimRig(SyntheticWorm(seed=0), stage, ChannelSpec(GEOM, "fluorescence"),
                   ChannelSpec(GEOM, "behaviour"), fps=fps)
 

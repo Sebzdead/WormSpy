@@ -8,14 +8,12 @@ from wormspy.sim.stage import SimStage
 from wormspy.sim.worm import SyntheticWorm
 
 GEOM = ImageGeometry(width_px=360, height_px=225, um_per_px=4.0)
-NATIVE_PER_UM = 20.0
 
 
 def _rig(worm=None, **kw):
     worm = worm if worm is not None else SyntheticWorm(seed=0, start_um=(25_000.0, 25_000.0))
-    stage = SimStage(limits={a: (0.0, 1_000_000.0) for a in "xyz"},
-                     native_per_um=NATIVE_PER_UM, max_speed_um_s=2000.0,
-                     positions={"x": 500_000.0, "y": 500_000.0, "z": 0.0})
+    stage = SimStage(limits_um={a: (0.0, 50_000.0) for a in "xyz"}, max_speed_um_s=2000.0,
+                     positions_um={"x": 25_000.0, "y": 25_000.0, "z": 0.0})
     return SimRig(worm, stage,
                   clock=ChannelSpec(GEOM, role="fluorescence"),
                   follower=ChannelSpec(GEOM, role="behaviour"),
@@ -74,8 +72,8 @@ def test_stage_position_closes_the_loop_on_the_rendered_image():
                          reversal_rate_hz=0.0)
     rig = _rig(worm=worm)
     cx, cy = worm.centroid
-    rig.stage.move_absolute("x", cx * NATIVE_PER_UM)
-    rig.stage.move_absolute("y", cy * NATIVE_PER_UM)
+    rig.stage.move_absolute_um("x", cx)
+    rig.stage.move_absolute_um("y", cy)
     for _ in range(20):  # let the stage arrive
         rig.tick()
     image = _drain(rig.follower_camera)[-1].image

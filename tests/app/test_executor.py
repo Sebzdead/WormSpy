@@ -22,7 +22,7 @@ GEOM = ImageGeometry(width_px=48, height_px=32, um_per_px=30.0)
 
 
 def _app(tmp_path, clock_drops=(), speed=10.0):
-    stage = SimStage({a: (0.0, 1e7) for a in "xyz"}, 20.0, 1000.0, {"x": 0.0, "y": 0.0, "z": 0.0})
+    stage = SimStage({a: (0.0, 1e7) for a in "xyz"}, 1000.0, {"x": 0.0, "y": 0.0, "z": 0.0})
     rig = SimRig(SyntheticWorm(seed=0), stage, ChannelSpec(GEOM, "fluorescence"),
                  ChannelSpec(GEOM, "behaviour"), fps=20.0, clock_drops=clock_drops)
     handle = SimRigHandle(rig, clock_name="gcamp", follower_name="bf", speed=speed)
