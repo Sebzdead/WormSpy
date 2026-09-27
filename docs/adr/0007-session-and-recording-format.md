@@ -38,8 +38,10 @@ fluorescence channels, both raw. Page *i* of every file corresponds to row *i* o
 **`frames.csv` is appended as frames arrive and flushed regularly.** A crash loses at most the
 last few rows. Columns:
 
-- **Keys and timing:** `frame_index`, `host_time`, then per channel `frame_id`, `timestamp` and
-  `dropped`.
+- **Keys and timing:** `frame_index`, `host_time`, then for each channel `<channel>_frame_id`,
+  `<channel>_timestamp_ns` and `<channel>_dropped`, where `<channel>` is the channel's name, the
+  same as its file stem. Then `pair_skew_ns`: the follower-minus-clock timestamp offset relative to
+  the first pair. A large value means the pairing is suspect.
 - **Position:** stage `x_um`, `y_um`, `z_um`, interpolated to frame time from a fixed-rate stage
   poller; `worm_x_um`, `worm_y_um` (world/plate position, using calibration); `target_px_x`,
   `target_px_y`.
