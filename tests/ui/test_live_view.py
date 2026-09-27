@@ -126,3 +126,49 @@ def test_first_levels_for_sparse_fluorescence_run_from_background_to_the_neuron(
     assert lo < 1000                                       # background sits near black
     assert 15000 < hi < 40000                              # the neuron isn't clipped...
     # ...and the hot pixel didn't stretch the range to 65535
+
+
+def test_the_feed_is_locked_to_the_whole_image(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub)
+    _publish(hub, "gcamp", np.zeros((120, 192), np.uint16), 1)
+    view.refresh()
+    assert view._viewbox.state["mouseEnabled"] == [False, False]
+    view.show()
+    qtbot.waitExposed(view)
+    (x0, x1), (y0, y1) = view._viewbox.viewRange()
+    assert x0 <= 0.5 and x1 >= 191.5 and y0 <= 0.5 and y1 >= 119.5   # the whole sensor
+
+
+@pytest.mark.parametrize(("dtype", "top"), [(np.uint8, 255), (np.uint16, 65535)])
+def test_histogram_axis_is_the_cameras_dynamic_range_and_cannot_be_moved(qtbot, dtype, top):
+    hub = FrameHub()
+    view = _view(qtbot, hub)
+    _publish(hub, "gcamp", np.full((40, 60), 10, dtype), 1)
+    view.refresh()
+    vb = view._histogram.item.vb
+    assert view.histogram_range == (0, top)
+    assert vb.state["mouseEnabled"] == [False, False]
+    assert vb.viewRange()[0] == pytest.approx([0, top])
+    view.auto_levels()                                    # new levels don't move the axis
+    _publish(hub, "gcamp", np.full((40, 60), 200, dtype), 2)
+    view.refresh()
+    assert vb.viewRange()[0] == pytest.approx([0, top])
+    view._histogram.item.region.setRegion((-500, top * 3))  # handles stay inside the range
+    lo, hi = view._histogram.item.region.getRegion()
+    assert lo >= 0 and hi <= top
+
+
+def test_histogram_shows_where_the_pixels_sit_on_a_log_scale(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub, channel="bf")
+    image = np.full((40, 60), 30, np.uint8)
+    image[:4, :4] = 255                                   # a few clipped pixels
+    _publish(hub, "bf", image, 1)
+    view.refresh()
+    x, y = view._histogram.item.plot.getData()
+    assert x[0] == 0 and x[-1] == pytest.approx(256)
+    peak_bin = int(np.argmax(y))
+    assert x[peak_bin] <= 30 < x[peak_bin + 1]
+    assert y[-1] > 0                                      # clipped pixels visible at the top
+    assert y.max() == pytest.approx(np.log10(1 + (image[::4, ::4] == 30).sum()))

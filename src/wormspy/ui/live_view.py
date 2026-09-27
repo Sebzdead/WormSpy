@@ -1,8 +1,12 @@
 """LiveView: one camera channel, displayed faithfully (ADR 0004).
 
-- The image with a linked histogram. Levels are **fixed**: 8-bit starts at 0–255, 16-bit is
-  levelled once on its first frame, and after that only the operator (histogram handles or
-  "Auto") changes them. A brighter frame must look brighter.
+- The image, locked to its canvas: no pan or zoom, the feed always shows the whole sensor.
+- An exposure histogram whose axis is fixed to the camera's dynamic range (0 to the dtype
+  maximum) with log counts, so it reads like a camera histogram: where the pixels sit, and how
+  close they are to clipping. Only its two level handles move.
+- Levels are **fixed**: 8-bit starts at 0–255, 16-bit is levelled once on its first frame, and
+  after that only the operator (level handles or "Auto") changes them. A brighter frame must
+  look brighter.
 - A LUT choice (grey, inferno, …), which replaces v1's heatmap toggle.
 - A saturation readout: the fraction of pixels at the dtype's maximum.
 - Overlays: FOV-centre crosshair, tracked point, and an optional threshold-mask tint.
@@ -13,7 +17,7 @@ Display processing never touches recorded data.
 import cv2
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -32,6 +36,16 @@ pg.setConfigOptions(imageAxisOrder="row-major", antialias=True)
 LUTS = ("grey", "inferno", "viridis", "magma", "plasma", "thermal", "flame")
 MASK_RGBA = (57, 255, 90, 60)          # the WormsPy green, faint
 DEFAULT_ASPECT = 1920 / 1200
+HISTOGRAM_BINS = 256
+HISTOGRAM_STEP = 4                     # histogram from every 4th pixel in each direction
+
+
+def dynamic_range(dtype: np.dtype) -> tuple[float, float]:
+    """The full range a camera image of this dtype can take."""
+    if np.issubdtype(dtype, np.integer):
+        info = np.iinfo(dtype)
+        return float(info.min), float(info.max)
+    return 0.0, 1.0
 
 
 class LiveView(QWidget):
@@ -59,6 +73,7 @@ class LiveView(QWidget):
         self._viewbox = self.canvas.addViewBox(lockAspect=True, invertY=True)
         self._viewbox.setMenuEnabled(False)
         self._viewbox.setDefaultPadding(0)
+        self._viewbox.setMouseEnabled(x=False, y=False)    # a fixed feed: no pan, no zoom
         self.image_item = pg.ImageItem()
         self._mask_item = pg.ImageItem()
         self._mask_item.setVisible(False)
@@ -76,12 +91,23 @@ class LiveView(QWidget):
         self._histogram = pg.HistogramLUTWidget(orientation="horizontal")
         self._histogram.setImageItem(self.image_item)
         self._histogram.setBackground(theme.GROUND)
-        self._histogram.item.plot.setBrush((57, 255, 90, 60))
-        self._histogram.item.plot.setPen((57, 255, 90, 160))
-        self._histogram.item.region.setBrush((57, 255, 90, 22))
-        for line in self._histogram.item.region.lines:
-            line.setPen(pg.mkPen((57, 255, 90, 150), width=1))
         self._histogram.setFixedHeight(84)
+        hist = self._histogram.item
+        # We draw the histogram ourselves (fixed bins over the full range, log counts), so
+        # pyqtgraph's auto-binned one must not overwrite it on every frame.
+        self.image_item.sigImageChanged.disconnect(hist.imageChanged)
+        hist.plot.setBrush((57, 255, 90, 60))
+        hist.plot.setPen((57, 255, 90, 160))
+        hist.region.setBrush((57, 255, 90, 22))
+        for line in hist.region.lines:
+            line.setPen(pg.mkPen((57, 255, 90, 150), width=1))
+        hist.vb.setMouseEnabled(x=False, y=False)
+        hist.vb.setMenuEnabled(False)
+        hist.vb.disableAutoRange()
+        hist.gradient.showTicks(False)                      # the LUT comes from the combo box
+        hist.gradient.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.histogram_range: tuple[float, float] = (0.0, 0.0)
+        self._set_histogram_range(np.dtype(np.uint16))
 
         self.saturation_label = QLabel("")
         self.saturation_label.setStyleSheet(f"color: {theme.RED}; font-weight: 700;")
@@ -137,6 +163,9 @@ class LiveView(QWidget):
         first = self.image is None or self.image.shape != frame.image.shape
         self.image = frame.image
         self.image_item.setImage(self.image, autoLevels=False)
+        if first:
+            self._set_histogram_range(self.image.dtype)
+        self._update_histogram()
         if not self._levelled:
             if self.image.dtype == np.uint8:
                 self._set_levels(0.0, 255.0)
@@ -147,7 +176,7 @@ class LiveView(QWidget):
             height, width = self.image.shape[:2]
             self._cross_h.setPos(height / 2)
             self._cross_v.setPos(width / 2)
-            self._viewbox.autoRange(padding=0)
+            self._viewbox.setRange(xRange=(0, width), yRange=(0, height), padding=0)
         self._update_saturation()
         return True
 
@@ -172,6 +201,26 @@ class LiveView(QWidget):
                             interpolation=cv2.INTER_AREA)
         hi = float(binned.max())
         self._set_levels(lo, max(hi, lo + 1))
+
+    def _set_histogram_range(self, dtype: np.dtype) -> None:
+        lo, hi = dynamic_range(dtype)
+        self.histogram_range = (lo, hi)
+        hist = self._histogram.item
+        hist.vb.setLimits(xMin=lo, xMax=hi)
+        hist.vb.setXRange(lo, hi, padding=0)
+        hist.region.setBounds((lo, hi))
+        samples = -(-1200 // HISTOGRAM_STEP) * -(-1920 // HISTOGRAM_STEP)
+        if self.image is not None:
+            samples = self.image[::HISTOGRAM_STEP, ::HISTOGRAM_STEP].size
+        hist.vb.setYRange(0, np.log10(1 + samples), padding=0.05)
+
+    def _update_histogram(self) -> None:
+        """Fixed bins spanning the whole dynamic range; counts on a log scale."""
+        lo, hi = self.histogram_range
+        sample = self.image[::HISTOGRAM_STEP, ::HISTOGRAM_STEP]
+        counts, edges = np.histogram(sample, bins=HISTOGRAM_BINS, range=(lo, hi + 1))
+        self._histogram.item.plot.setData(edges, np.log10(1 + counts), stepMode="center",
+                                          fillLevel=0)
 
     def _set_levels(self, lo: float, hi: float) -> None:
         self.image_item.setLevels((lo, hi))
