@@ -13,3 +13,7 @@ WormSpy/backend/code/Reda_app.py
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+
+# Rig-specific configuration and calibration (see config/rig.example.toml)
+config/rig.toml
+config/calibration.json

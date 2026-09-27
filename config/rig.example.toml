@@ -1,0 +1,38 @@
+# WormsPy rig configuration. Copy to rig.toml and edit for your rig.
+# Every key is optional; omitted keys use the defaults shown here.
+
+[stage]
+# Serial ports of the Zaber controllers (see Zaber Launcher). XY controllers are
+# devices 1 (x) and 2 (y) on xy_port; the Z lift is device 1 on z_port.
+xy_port = "COM6"
+z_port = "COM3"
+max_speed_um_s = 2000          # hard cap for any velocity move (joystick, tracking)
+
+[stage.safe_range_um]
+# Software never moves outside these ranges, and they are written into the Zaber
+# controllers' limit.min / limit.max at startup so the firmware enforces them too.
+# Units: µm in stage coordinates.
+x = [0, 50400]                 # TSB60E travel
+y = [0, 50400]
+# IMPORTANT: narrow Z to a range where the objective cannot touch the plate or holder.
+z = [0, 20000]                 # VSR20A travel
+
+[gamepad.sticks]
+xy_max_um_s = 1000             # full left-stick deflection
+z_max_um_s = 100               # full right-stick deflection
+deadzone = 0.1
+expo = 2.0                     # 1 = linear; 2 = finer control near centre
+invert_y = true
+invert_z = false
+
+[gamepad.buttons]
+# Button name = command. Commands: ToggleTracking, ToggleRecording, SetFocus,
+# ReturnToFocus, MarkEvent, StartLive, StopLive, StartRecording, StopRecording, Calibrate
+X = "ToggleTracking"
+B = "ToggleRecording"
+A = "ReturnToFocus"
+Y = "SetFocus"
+
+[paths]
+data_root = "~/WormsPy_data"   # sessions are created here as <date>_<animal-id>/
+# calibration = "calibration.json"   # default: next to this file

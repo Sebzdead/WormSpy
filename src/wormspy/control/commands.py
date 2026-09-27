@@ -67,7 +67,7 @@ class ReturnToFocus:
 
 @dataclass(frozen=True)
 class MarkEvent:
-    label: str
+    label: str = "marker"     # a gamepad button marks an unlabelled event
 
 
 @dataclass(frozen=True)
