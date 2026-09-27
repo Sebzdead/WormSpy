@@ -96,3 +96,14 @@ def test_the_calibration_target_can_be_placed_under_the_objective():
     rig.target = True
     rig.tick()
     assert _drain(rig.follower_camera)[-1].image.min() < 150      # beads visible
+
+
+def test_the_calibration_slide_replaces_the_plate_so_no_worm_is_in_view():
+    rig = _rig()                                   # worm sits right under the objective
+    rig.tick()
+    assert (_drain(rig.follower_camera)[-1].image < 100).sum() > 100    # worm visible
+    rig.target = True
+    rig.tick()
+    image = _drain(rig.follower_camera)[-1].image
+    assert image.min() < 150                                              # beads visible
+    assert (image < 100).sum() < 0.02 * image.size                        # but no worm body

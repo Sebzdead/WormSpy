@@ -22,6 +22,8 @@ from wormspy.sim.render import ImageGeometry, render_behaviour, render_fluoresce
 from wormspy.sim.stage import SimStage
 from wormspy.sim.worm import SyntheticWorm
 
+_NO_WORM = SyntheticWorm(seed=0, start_um=(1e9, 1e9))   # far off every field of view
+
 
 @dataclass(frozen=True)
 class ChannelSpec:
@@ -107,5 +109,7 @@ class SimRig:
 
     def _render(self, spec: ChannelSpec, stage_um) -> np.ndarray:
         render = render_fluorescence if spec.role == "fluorescence" else render_behaviour
-        return render(self.worm, stage_um, spec.geometry, noise_sigma=spec.noise_sigma,
+        # the calibration slide replaces the plate: no worm under the objective meanwhile
+        worm = _NO_WORM if self.target else self.worm
+        return render(worm, stage_um, spec.geometry, noise_sigma=spec.noise_sigma,
                       rng=self._rng, target=self.target)

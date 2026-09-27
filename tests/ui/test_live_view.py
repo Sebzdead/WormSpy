@@ -100,6 +100,7 @@ def test_the_mask_overlay_can_be_toggled(qtbot):
     assert view.mask_visible is False                     # off by default
     view.show_mask(True)
     assert view.mask_visible is True
+    assert view.mask_checkbox.isChecked()                 # the checkbox always tells the truth
 
 
 def test_luts_can_be_switched(qtbot):
@@ -108,3 +109,20 @@ def test_luts_can_be_switched(qtbot):
     assert "inferno" in view.available_luts() and "grey" in view.available_luts()
     view.set_lut("inferno")
     assert view.lut_name == "inferno"
+
+
+def test_first_levels_for_sparse_fluorescence_run_from_background_to_the_neuron(qtbot):
+    hub = FrameHub()
+    view = _view(qtbot, hub)
+    rng = np.random.default_rng(1)
+    image = rng.normal(1000, 300, (120, 160)).clip(0)
+    yy, xx = np.mgrid[:120, :160]
+    image += 29000 * np.exp(-((xx - 80) ** 2 + (yy - 60) ** 2) / (2 * 3.0**2))   # a neuron
+    image = image.astype(np.uint16)
+    image[5, 5] = 65535                                    # a hot pixel must not set the scale
+    _publish(hub, "gcamp", image, 1)
+    view.refresh()
+    lo, hi = view.levels
+    assert lo < 1000                                       # background sits near black
+    assert 15000 < hi < 40000                              # the neuron isn't clipped...
+    # ...and the hot pixel didn't stretch the range to 65535

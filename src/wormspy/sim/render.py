@@ -96,8 +96,12 @@ def render_behaviour(worm: SyntheticWorm, stage_um, geometry: ImageGeometry,
             _add_spot(shaded, bx, by, body - background, BEAD_RADIUS_UM / 2 / geometry.um_per_px)
         img = np.clip(np.rint(shaded), 0, 255).astype(np.uint8)
     px = geometry.world_to_px(worm.points, stage_um)
-    pts = np.rint(px * (1 << _SUBPIXEL_SHIFT)).astype(np.int32).reshape(-1, 1, 2)
     thickness = max(1, round(body_width_um / geometry.um_per_px))
+    margin = thickness + 2
+    if (px[:, 0].max() < -margin or px[:, 0].min() > geometry.width_px + margin
+            or px[:, 1].max() < -margin or px[:, 1].min() > geometry.height_px + margin):
+        return _add_noise(img.astype(float), noise_sigma, rng, 255).astype(np.uint8)  # not in view
+    pts = np.rint(px * (1 << _SUBPIXEL_SHIFT)).astype(np.int32).reshape(-1, 1, 2)
     cv2.polylines(img, [pts], isClosed=False, color=int(body), thickness=thickness,
                   lineType=cv2.LINE_AA, shift=_SUBPIXEL_SHIFT)
     return _add_noise(img.astype(float), noise_sigma, rng, 255).astype(np.uint8)

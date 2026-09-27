@@ -10,6 +10,7 @@
 Display processing never touches recorded data.
 """
 
+import cv2
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Signal
@@ -74,8 +75,8 @@ class LiveView(QWidget):
         self._lut_box = QComboBox()
         self._lut_box.addItems(LUTS)
         self._lut_box.currentTextChanged.connect(self.set_lut)
-        mask_box = QCheckBox("Threshold mask")
-        mask_box.toggled.connect(self.show_mask)
+        self.mask_checkbox = QCheckBox("Threshold mask")
+        self.mask_checkbox.toggled.connect(self.show_mask)
 
         header = QHBoxLayout()
         name = QLabel(title)
@@ -83,7 +84,7 @@ class LiveView(QWidget):
         header.addWidget(name)
         header.addStretch(1)
         header.addWidget(self.saturation_label)
-        header.addWidget(mask_box)
+        header.addWidget(self.mask_checkbox)
         header.addWidget(self._lut_box)
         header.addWidget(auto)
         layout = QVBoxLayout(self)
@@ -124,10 +125,21 @@ class LiveView(QWidget):
         return float(lo), float(hi)
 
     def auto_levels(self) -> None:
+        """Background to brightest real structure.
+
+        The top is the maximum of a 3×3-averaged image: a lone hot pixel is averaged away, while
+        a neuron a few pixels wide survives. Sparse fluorescence (a neuron on dark background)
+        therefore shows the neuron unclipped instead of stretching noise to full contrast.
+        """
         if self.image is None:
             return
-        lo, hi = np.percentile(self.image[::2, ::2], (0.5, 99.5))
-        self._set_levels(float(lo), float(max(hi, lo + 1)))
+        height, width = self.image.shape[:2]
+        lo = float(np.percentile(self.image[::2, ::2], 0.5))
+        binned = cv2.resize(self.image.astype(np.float32), (max(1, width // 3),
+                                                            max(1, height // 3)),
+                            interpolation=cv2.INTER_AREA)
+        hi = float(binned.max())
+        self._set_levels(lo, max(hi, lo + 1))
 
     def _set_levels(self, lo: float, hi: float) -> None:
         self.image_item.setLevels((lo, hi))
@@ -162,6 +174,8 @@ class LiveView(QWidget):
 
     def show_mask(self, visible: bool) -> None:
         self.mask_visible = bool(visible)
+        if self.mask_checkbox.isChecked() != self.mask_visible:
+            self.mask_checkbox.setChecked(self.mask_visible)
         self._mask_item.setVisible(self.mask_visible)
         if self.mask_visible:
             self._draw_mask()

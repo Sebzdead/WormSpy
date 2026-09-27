@@ -44,6 +44,7 @@ packages = ["src/wormspy"]
 testpaths = ["tests"]
 addopts = "-ra"
 qt_api = "pyside6"
+filterwarnings = ["error::RuntimeWarning"]   # numeric problems (overflow, NaN casts) fail tests
 
 [tool.ruff]
 line-length = 100
