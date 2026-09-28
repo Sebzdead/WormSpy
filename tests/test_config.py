@@ -77,3 +77,42 @@ def test_a_missing_config_file_means_all_defaults(tmp_path):
     config = load_config(tmp_path / "rig.toml")
     assert config.stage.xy_port == "COM6"
     assert config.paths.calibration == tmp_path / "calibration.json"
+
+
+def test_camera_defaults_match_the_reference_rig(tmp_path):
+    cameras = load_config(_write(tmp_path, "")).cameras
+    assert cameras.fps == 10
+    assert (cameras.clock.name, cameras.clock.role, cameras.clock.pixel_format) == (
+        "gcamp", "fluorescence", "Mono16")
+    assert cameras.clock.exposure_us == 14_000
+    assert (cameras.follower.name, cameras.follower.role) == ("brightfield", "behaviour")
+
+
+def test_camera_settings_are_read_from_the_file(tmp_path):
+    cameras = load_config(_write(tmp_path, """
+[cameras]
+fps = 20
+[cameras.clock]
+serial = "21000001"
+exposure_us = 30000
+[cameras.follower]
+serial = 21000002
+name = "bf"
+""")).cameras
+    assert cameras.fps == 20
+    assert cameras.clock.serial == "21000001" and cameras.clock.exposure_us == 30_000
+    assert cameras.follower.serial == "21000002" and cameras.follower.name == "bf"
+
+
+@pytest.mark.parametrize(("text", "message"), [
+    ("[cameras.clock]\nexposure_us = 99000", "exposure_us"),
+    ("[cameras.clock]\npixel_format = 'Mono8'", "Mono16"),
+    ("[cameras.follower]\nrole = 'calcium'", "role"),
+    ("[cameras.follower]\nname = 'gcamp'", "different names"),
+    ("[cameras.clock]\nserial='1'\n[cameras.follower]\nserial='1'", "same serial"),
+    ("[cameras.clock]\nexposure = 5", "unknown key"),
+    ("[cameras]\nfps = 0", "fps"),
+])
+def test_bad_camera_settings_are_rejected_by_name(tmp_path, text, message):
+    with pytest.raises(ConfigError, match=message):
+        load_config(_write(tmp_path, text))

@@ -28,6 +28,8 @@ from wormspy.tracking.controller import ServoConfig
 from wormspy.tracking.estimators import BrightMarker, DarkObject
 from wormspy.tracking.tracker import Tracker
 
+PAIRING_TOLERANCE_PERIODS = 0.5
+
 
 class Executor:
     def __init__(self, store: StateStore, rig: RigHandle, hub: FrameHub, data_root: Path,
@@ -49,6 +51,7 @@ class Executor:
         self._loop: AcquisitionLoop | None = None
         self._recorder: Recorder | None = None
         self._recorder_lock = threading.Lock()
+        self._pairing_alarmed = False
         self._effects: queue.Queue = queue.Queue()
         self.poller = StagePoller(rig.stage, rig.now)   # runs for the app's lifetime
         self.poller.start()
@@ -97,6 +100,7 @@ class Executor:
 
     def _start_acquisition(self, _: X.StartAcquisition) -> None:
         rig = self._rig
+        self._pairing_alarmed = False
         self._loop = AcquisitionLoop(rig.clock_camera, rig.follower_camera,
                                      rig.clock_channel.name, rig.follower_channel.name,
                                      self._hub, on_pair=self._on_pair,
@@ -117,10 +121,25 @@ class Executor:
             self._loop = None
 
     def _on_pair(self, pair: FramePair) -> None:          # acquisition thread
+        self._check_pairing(pair)
         with self._recorder_lock:
             recorder = self._recorder
         if recorder is not None:
             recorder.submit(pair)
+
+    def _check_pairing(self, pair: FramePair) -> None:
+        """Paired frames are exposed together, so their capture times agree to within the
+        trigger latency. Half a frame period apart means the frame IDs are misaligned."""
+        if self._pairing_alarmed or pair.clock is None or pair.follower is None:
+            return
+        apart_s = abs(pair.clock.capture_ts - pair.follower.capture_ts)
+        if apart_s > PAIRING_TOLERANCE_PERIODS / self._rig.fps:
+            self._pairing_alarmed = True
+            self._store.dispatch(E.AlarmRaised(
+                kind="pairing_suspect",
+                message=f"Frame {pair.frame_index}: the two cameras' frames were captured "
+                        f"{apart_s * 1e3:.0f} ms apart. Check the trigger cable, then restart "
+                        f"the live view."))
 
     def _on_acquisition_failure(self, reason: str) -> None:  # acquisition thread, exiting
         self._rig.stop()

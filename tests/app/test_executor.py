@@ -208,3 +208,17 @@ def test_effects_not_built_yet_raise_a_visible_alarm(tmp_path):
     assert any(a.kind == "not_implemented" for a in store.state.alarms)
     store.dispatch(C.StopLive())
     executor.wait_idle()
+
+
+def test_pairs_captured_a_frame_apart_raise_a_pairing_alarm_once(tmp_path):
+    from wormspy.acquisition.pairing import FramePair
+    from wormspy.core.frames import Frame
+    store, _, executor, _ = _app(tmp_path)          # 20 fps: 50 ms period
+    frame = lambda ts: Frame(image=None, device_frame_id=0, capture_ts=ts)
+    executor._on_pair(FramePair(0, frame(1.000), frame(1.004), 0))       # trigger latency: fine
+    assert not any(a.kind == "pairing_suspect" for a in store.state.alarms)
+    executor._on_pair(FramePair(1, frame(2.000), frame(2.050), 0))       # one frame off
+    executor._on_pair(FramePair(2, frame(3.000), frame(3.050), 0))
+    alarms = [a for a in store.state.alarms if a.kind == "pairing_suspect"]
+    assert len(alarms) == 1 and "50 ms apart" in alarms[0].message
+    executor.close()

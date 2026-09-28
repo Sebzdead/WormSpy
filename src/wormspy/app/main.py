@@ -1,8 +1,8 @@
-"""The launcher: `wormspy --sim` (or `python -m wormspy --sim`).
+"""The launcher: `wormspy` on the rig, `wormspy --sim` anywhere (or `python -m wormspy`).
 
-Builds the state store, rig (simulated for now), executor, gamepad controller and window, and
-shuts all of them down cleanly when the window closes. Hardware mode needs the PySpin camera
-adapter, which doesn't exist yet, so it stops with an explicit message rather than half-working.
+Builds the state store, rig (the FLIR cameras and Zaber stage, or the simulated rig), executor,
+gamepad controller and window, and shuts all of them down cleanly when the window closes. If
+the rig's hardware can't be opened as configured, it stops with a message saying what to fix.
 """
 
 import argparse
@@ -15,6 +15,7 @@ from wormspy.app.executor import Executor
 from wormspy.config import RigConfig, load_config
 from wormspy.control import AppState, StateStore
 from wormspy.control import commands as C
+from wormspy.control import events as E
 from wormspy.control.gamepad import GamepadController
 from wormspy.core.frames import FrameHub
 from wormspy.sim.handle import SimRigHandle
@@ -33,7 +34,7 @@ class App:
     window: object
     store: StateStore
     executor: Executor
-    rig: SimRigHandle
+    rig: object                    # HardwareRig or SimRigHandle
     gamepad: GamepadController | None = None
     slide_action: object = None
     _closed: bool = field(default=False, repr=False)
@@ -48,11 +49,15 @@ class App:
         if self.gamepad is not None:
             self.gamepad.stop()
         self.executor.close()
+        close = getattr(self.rig, "close", None)
+        if close is not None:
+            close()                # cameras, Spinnaker system, stage connections
 
 
 def _parse(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="wormspy", description=__doc__.splitlines()[0])
-    parser.add_argument("--sim", action="store_true", help="run against the simulated rig")
+    parser.add_argument("--sim", action="store_true",
+                        help="run against the simulated rig instead of the hardware")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG,
                         help="rig.toml (default: config/rig.toml; defaults if absent)")
     parser.add_argument("--sim-speed", type=float, default=1.0,
@@ -89,11 +94,25 @@ def _disk_free(path: Path) -> float | None:
     return None
 
 
+def _hardware_rig(config: RigConfig):
+    from wormspy.config import ConfigError
+    from wormspy.hardware.flir import HardwareError
+    from wormspy.hardware.rig import open_rig
+    try:
+        return open_rig(config)
+    except (HardwareError, ConfigError) as exc:
+        raise SystemExit(f"wormspy: {exc}") from exc
+
+
+def _views(rig) -> tuple[tuple[str, str], tuple[str, str]]:
+    """Behaviour on the left, fluorescence on the right (as in v1)."""
+    channels = sorted((rig.clock_channel, rig.follower_channel),
+                      key=lambda ch: ch.role != "behaviour")
+    return tuple((ch.name, ch.name.replace("_", " ").title()) for ch in channels)
+
+
 def build(argv: list[str]) -> App:
     args = _parse(argv)
-    if not args.sim:
-        raise SystemExit("Hardware mode needs the PySpin camera adapter, which is not "
-                         "implemented yet. Run with --sim for the simulated rig.")
     from PySide6.QtGui import QAction  # Qt only once we know we are building a UI
     from PySide6.QtWidgets import QApplication
 
@@ -103,9 +122,14 @@ def build(argv: list[str]) -> App:
 
     theme.apply(QApplication.instance())
 
-    config = load_config(args.config)          # a missing file means all defaults
+    try:
+        config = load_config(args.config)      # a missing file means all defaults
+    except ValueError as exc:                  # ConfigError names the offending key
+        raise SystemExit(f"wormspy: {exc}") from exc
+    rig = _sim_rig(config, args.sim_speed) if args.sim else _hardware_rig(config)
     store, hub = StateStore(AppState()), FrameHub()
-    rig = _sim_rig(config, args.sim_speed)
+    for warning in getattr(rig, "warnings", ()):
+        store.dispatch(E.AlarmRaised(kind="hardware", message=warning))
     gamepad = _gamepad(config, rig.stage, store)
     executor = Executor(store, rig, hub, data_root=config.paths.data_root,
                         calibration_path=config.paths.calibration,
@@ -116,13 +140,20 @@ def build(argv: list[str]) -> App:
         xyz = None if sample is None else (sample.x_um, sample.y_um, sample.z_um)
         return StatusInfo(xyz_um=xyz, disk_free_bytes=_disk_free(config.paths.data_root))
 
-    window = MainWindow(StateBridge(store), hub, left=("brightfield", "Brightfield"),
-                        right=("gcamp", "Fluorescence"), status=status,
+    if args.sim:
+        left, right = ("brightfield", "Brightfield"), ("gcamp", "Fluorescence")
+    else:
+        left, right = _views(rig)
+    window = MainWindow(StateBridge(store), hub, left=left, right=right, status=status,
                         overlay=executor.tracking_overlay)
-    window.setWindowTitle("WormsPy — simulated rig")
-    slide = QAction("Calibration slide under the objective", window, checkable=True)
-    slide.toggled.connect(lambda on: setattr(rig.rig, "target", bool(on)))
-    window.menuBar().addMenu("Simulator").addAction(slide)
+    slide = None
+    if args.sim:
+        window.setWindowTitle("WormsPy — simulated rig")
+        slide = QAction("Calibration slide under the objective", window, checkable=True)
+        slide.toggled.connect(lambda on: setattr(rig.rig, "target", bool(on)))
+        window.menuBar().addMenu("Simulator").addAction(slide)
+    else:
+        window.setWindowTitle("WormsPy")
 
     app = App(window=window, store=store, executor=executor, rig=rig, gamepad=gamepad,
               slide_action=slide)

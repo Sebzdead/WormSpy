@@ -1,6 +1,29 @@
 # WormsPy rig configuration. Copy to rig.toml and edit for your rig.
 # Every key is optional; omitted keys use the defaults shown here.
 
+[cameras]
+fps = 10                       # set by the clock camera; the follower fires once per frame
+# GPIO wiring (ADR 0006): the clock camera's ExposureActive is output on clock_output_line,
+# cabled to the follower's trigger input. Defaults follow FLIR's Blackfly S sync app note.
+clock_output_line = "Line2"
+follower_trigger_line = "Line3"
+
+[cameras.clock]                # the calcium camera: the acquisition clock
+serial = ""                    # e.g. "21234567" (SpinView shows it); required on the rig
+name = "gcamp"                 # channel name: file stem and CSV column prefix
+role = "fluorescence"          # recorded raw 16-bit (BigTIFF)
+pixel_format = "Mono16"
+exposure_us = 14000
+gain_db = 0
+
+[cameras.follower]             # triggered 1:1 by the clock camera
+serial = ""
+name = "brightfield"
+role = "behaviour"             # recorded lossless FFV1 video
+pixel_format = "Mono8"
+exposure_us = 5000             # its own, usually shorter to limit motion blur
+gain_db = 0
+
 [stage]
 # Serial ports of the Zaber controllers (see Zaber Launcher). XY controllers are
 # devices 1 (x) and 2 (y) on xy_port; the Z lift is device 1 on z_port.

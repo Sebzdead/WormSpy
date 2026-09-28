@@ -45,3 +45,21 @@ fixed, stable rate and exposure is the non-negotiable requirement.
 - It needs one GPIO cable between the cameras, plus a documented wiring diagram in the build guide.
 - The display and tracker consume frames as best-effort *latest-only* readers off the pair
   stream. They can never slow down acquisition.
+
+## Implementation (2026-09-28)
+
+- `hardware/flir.py` (PySpin QuickSpin API) and `hardware/rig.py` (`open_rig`, `HardwareRig`).
+  Tested against a fake PySpin. Rig checks are in `docs/rework/rig-bringup.md`.
+- Until presets exist (ADR 0006, Q25), the camera settings come from `[cameras]` in
+  `rig.toml`: fps, per-camera serial, name, role, pixel format, exposure and gain, and the two
+  GPIO lines. They are validated at startup. For example, a fluorescence channel must be Mono16,
+  and an exposure must fit in the frame period.
+- **Frame IDs** are counted from each camera's first frame of the run, not taken raw. The
+  follower is armed before the clock starts, so the two runs begin on the same exposure.
+  Incomplete images count toward the run, so a lost first frame can't shift the pairing.
+- **The pairing is cross-checked by time.** Each frame's `capture_ts` is its device timestamp
+  mapped onto host `time.monotonic` at mid-exposure. The mapping comes from a timestamp latch,
+  re-taken every 10 s to follow clock drift. Paired frames captured more than half a frame
+  period apart raise a `pairing_suspect` alarm.
+- A missing camera stops the launcher with a message naming the rig.toml key and the serials
+  it found. A missing stage becomes a `hardware` alarm, and the app runs with a NullStage.

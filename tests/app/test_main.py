@@ -53,6 +53,61 @@ def test_closing_the_window_shuts_everything_down(qtbot, tmp_path):
     assert app.store.state.mode is Mode.IDLE
 
 
-def test_hardware_mode_explains_that_camera_adapters_do_not_exist_yet(tmp_path):
-    with pytest.raises(SystemExit, match="PySpin camera adapter"):
-        build(["--config", str(_config(tmp_path))])
+def _hardware_config(tmp_path, serials=("21000001", "21000002")):
+    path = tmp_path / "rig.toml"
+    path.write_text(f"""
+[cameras.clock]
+serial = "{serials[0]}"
+[cameras.follower]
+serial = "{serials[1]}"
+[stage]
+xy_port = "/dev/wormspy-test-no-such-port"
+z_port = "/dev/wormspy-test-no-such-port"
+[paths]
+data_root = "{(tmp_path / "data").as_posix()}"
+""")
+    return path
+
+
+def _fake_pyspin(monkeypatch):
+    import sys
+
+    import numpy as np
+
+    from tests.hardware.fake_pyspin import FakeCamera, FakePySpin
+    clock = FakeCamera("21000001", shape=(120, 192), dtype=np.uint16)
+    follower = FakeCamera("21000002", shape=(120, 192), dtype=np.uint8)
+    pyspin = FakePySpin([clock, follower])
+    monkeypatch.setitem(sys.modules, "PySpin", pyspin)
+    return pyspin, clock, follower
+
+
+def test_hardware_mode_without_pyspin_says_how_to_install_it(monkeypatch, tmp_path):
+    import sys
+    monkeypatch.setitem(sys.modules, "PySpin", None)
+    with pytest.raises(SystemExit, match="Spinnaker"):
+        build(["--config", str(_hardware_config(tmp_path))])
+
+
+def test_hardware_mode_names_the_missing_camera_serial(monkeypatch, tmp_path):
+    _fake_pyspin(monkeypatch)
+    with pytest.raises(SystemExit, match=r"cameras.clock.serial.*21000001, 21000002"):
+        build(["--config", str(_hardware_config(tmp_path, serials=("", "21000002")))])
+
+
+def test_hardware_mode_streams_both_cameras_and_warns_about_a_missing_stage(
+        monkeypatch, qtbot, tmp_path):
+    pyspin, clock, follower = _fake_pyspin(monkeypatch)
+    app = build(["--config", str(_hardware_config(tmp_path))])
+    qtbot.addWidget(app.window)
+    assert app.window.windowTitle() == "WormsPy"
+    assert app.window.left_view.channel == "brightfield"      # behaviour on the left
+    assert any(a.kind == "hardware" and "stage" in a.message for a in app.store.state.alarms)
+    for fid in range(3):
+        clock.push(fid, fid * 100_000_000, value=1000)
+        follower.push(fid, fid * 100_000_000 + 10_000, value=50)
+    app.store.dispatch(C.StartLive())
+    _wait(qtbot, lambda: app.window.tick() or app.window.left_view.image is not None)
+    assert app.window.right_view.image.dtype.name == "uint16"
+    app.shutdown()
+    assert not clock.initialised and not follower.initialised and pyspin.system.released
