@@ -55,12 +55,13 @@ QPushButton[role="primary"]:disabled {{ color: #3f5a42; border-color: #262926; }
 QPushButton[role="danger"] {{ border-color: #7a2a2a; color: {RED}; font-weight: 600; }}
 QPushButton[role="danger"]:hover {{ background: #3a1c1c; }}
 
-QLineEdit, QPlainTextEdit, QComboBox {{
+QLineEdit, QPlainTextEdit, QComboBox, QDoubleSpinBox {{
     background: {RAISED}; border: 1px solid {BORDER}; border-radius: 4px; padding: 3px 6px;
     selection-background-color: {ACCENT_DIM};
 }}
-QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{ border-color: {ACCENT}; }}
-QLineEdit:disabled, QComboBox:disabled {{ color: #5a5f5a; }}
+QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QDoubleSpinBox:focus {{
+    border-color: {ACCENT}; }}
+QLineEdit:disabled, QComboBox:disabled, QDoubleSpinBox:disabled {{ color: #5a5f5a; }}
 QComboBox QAbstractItemView {{ background: {RAISED}; selection-background-color: {ACCENT_DIM}; }}
 QCheckBox::indicator:checked {{ background: {ACCENT}; border: 1px solid {ACCENT}; }}
 QCheckBox::indicator {{ width: 12px; height: 12px; border: 1px solid {BORDER};

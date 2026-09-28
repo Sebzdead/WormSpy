@@ -16,7 +16,7 @@ from wormspy.ui.main_window import MainWindow, StatusInfo
 class Sources:
     def __init__(self):
         self.status = StatusInfo(xyz_um=(25012.4, 24987.9, 5000.0), disk_free_bytes=812e9)
-        self.overlay = None
+        self.overlay = {}
 
 
 def _window(qtbot):
@@ -87,10 +87,18 @@ def test_double_click_on_a_view_centres_that_point(qtbot):
 
 def test_the_tracking_overlay_is_drawn_on_the_source_channel(qtbot):
     window, _, _hub, sources, _ = _window(qtbot)
-    sources.overlay = ("bf", Estimate(point_px=(20.0, 10.0), mask=np.ones((40, 60), bool)))
+    sources.overlay = {"bf": Estimate(point_px=(20.0, 10.0), mask=np.ones((40, 60), bool))}
     window.tick()
     assert window.left_view.tracked_point == (20.0, 10.0)
     assert window.right_view.tracked_point is None
-    sources.overlay = None
+    sources.overlay = {}
     window.tick()
     assert window.left_view.tracked_point is None
+
+
+def test_a_mapped_point_is_drawn_on_the_other_camera_too(qtbot):
+    window, _, _hub, sources, _ = _window(qtbot)
+    sources.overlay = {"bf": Estimate(point_px=(20.0, 10.0)),
+                       "gcamp": Estimate(point_px=(24.5, 7.0), mapped=True)}
+    window.tick()
+    assert window.right_view.tracked_point == (24.5, 7.0)

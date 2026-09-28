@@ -8,6 +8,7 @@ subsystems don't exist yet raise a visible `not_implemented` alarm instead of be
 ignored.
 """
 
+import json
 import queue
 import threading
 from collections.abc import Callable
@@ -24,8 +25,9 @@ from wormspy.control import StateStore, TrackingStatus
 from wormspy.control import effects as X
 from wormspy.control import events as E
 from wormspy.core.frames import FrameHub
+from wormspy.presets import save_presets
 from wormspy.tracking.controller import ServoConfig
-from wormspy.tracking.estimators import BrightMarker, DarkObject
+from wormspy.tracking.estimators import BrightMarker, DarkObject, Estimate
 from wormspy.tracking.tracker import Tracker
 
 PAIRING_TOLERANCE_PERIODS = 0.5
@@ -33,7 +35,8 @@ PAIRING_TOLERANCE_PERIODS = 0.5
 
 class Executor:
     def __init__(self, store: StateStore, rig: RigHandle, hub: FrameHub, data_root: Path,
-                 calibration_path: Path | None = None, recorder_queue_size: int = 64,
+                 calibration_path: Path | None = None, presets_path: Path | None = None,
+                 recorder_queue_size: int = 64,
                  estimators: dict | None = None, servo: ServoConfig | None = None,
                  override: Callable[[], bool] = lambda: False) -> None:
         self._store = store
@@ -42,6 +45,7 @@ class Executor:
         self._data_root = Path(data_root)
         self._recorder_queue_size = recorder_queue_size
         self._calibration_path = None if calibration_path is None else Path(calibration_path)
+        self._presets_path = None if presets_path is None else Path(presets_path)
         self._calibration: RigCalibration | None = None
         self._estimators = estimators if estimators is not None else {
             "dark_object": DarkObject(), "bright_marker": BrightMarker()}
@@ -67,6 +71,8 @@ class Executor:
             X.RunCalibration: self._run_calibration,
             X.CentreOn: self._centre_on,
             X.SetTracker: self._set_tracker,
+            X.ApplyCameraSettings: self._apply_camera_settings,
+            X.WritePresets: self._write_presets,
         }
         threading.Thread(target=self._run, name="executor", daemon=True).start()
         store.on_effect(self._effects.put)
@@ -145,10 +151,42 @@ class Executor:
         self._rig.stop()
         self._store.dispatch(E.AcquisitionFailed(reason=reason))
 
+    # --- camera settings and presets (ADR 0006) ----------------------------------------------
+
+    def _apply_camera_settings(self, effect: X.ApplyCameraSettings) -> None:
+        """Cameras can only be reconfigured while stopped, so a live view restarts around it
+        (a fresh acquisition run: frame IDs and pairing start over)."""
+        was_live = self._loop is not None
+        if was_live:
+            self._stop_acquisition(X.StopAcquisition())
+        try:
+            self._rig.apply_settings(effect.settings)
+        except Exception as exc:          # noqa: BLE001 - report, keep the old settings
+            self._store.dispatch(E.CameraSettingsFailed(reason=f"{type(exc).__name__}: {exc}"))
+        else:
+            self._store.dispatch(E.CameraSettingsApplied(settings=effect.settings,
+                                                         preset=effect.preset))
+        finally:
+            if was_live:
+                self._start_acquisition(X.StartAcquisition())
+
+    def _write_presets(self, effect: X.WritePresets) -> None:
+        if self._presets_path is not None:
+            save_presets(self._presets_path, effect.presets)
+
+    def _camera_snapshot(self) -> dict:
+        state = self._store.state
+        settings = state.camera_settings or self._rig.settings
+        return {"preset": state.preset, "settings": settings.to_json()}
+
     # --- sessions and recordings ------------------------------------------------------------
 
     def _create_session(self, effect: X.CreateSession) -> None:
         config = {"fps": self._rig.fps,
+                  "camera": self._camera_snapshot(),
+                  "calibration": (None if self._calibration_path is None
+                                  or not self._calibration_path.exists()
+                                  else json.loads(self._calibration_path.read_text())),
                   "channels": {ch.name: {"role": ch.role, "shape": list(ch.shape),
                                          "clock": ch is self._rig.clock_channel}
                                for ch in (self._rig.clock_channel, self._rig.follower_channel)}}
@@ -159,6 +197,7 @@ class Executor:
         recorder = Recorder(Path(effect.session_dir) / effect.name, self._rig.clock_channel,
                             self._rig.follower_channel, fps=self._rig.fps,
                             on_event=self._store.dispatch, queue_size=self._recorder_queue_size,
+                            extra={"camera": self._camera_snapshot()},
                             telemetry=StageTelemetry(self.poller,
                                                      lambda: self._store.state.focus_z_um))
         try:
@@ -201,6 +240,16 @@ class Executor:
                                                message=f"Could not load calibration: {exc}"))
             return
         self._store.dispatch(E.CalibrationCompleted(residual_px=self._calibration.residuals()))
+        self._report_registration()
+
+    def _report_registration(self) -> None:
+        """Unregistered cameras still track fine; only cross-camera overlays need it."""
+        if self._calibration.registered:
+            self._store.dispatch(E.AlarmCleared(kind="registration"))
+        else:
+            self._store.dispatch(E.AlarmRaised(
+                kind="registration",
+                message=f"Cameras not registered: {self._calibration.registration}"))
 
     def _run_calibration(self, _: X.RunCalibration) -> None:
         channels = [self._rig.clock_channel.name, self._rig.follower_channel.name]
@@ -213,6 +262,7 @@ class Executor:
             calibration.save(self._calibration_path)
         self._calibration = calibration
         self._store.dispatch(E.CalibrationCompleted(residual_px=calibration.residuals()))
+        self._report_registration()
 
     def _centre_on(self, effect: X.CentreOn) -> None:
         camera = None if self._calibration is None else self._calibration.cameras.get(effect.channel)
@@ -251,12 +301,22 @@ class Executor:
             log=self._log_tracking, override=self._override)
         self._tracker.start()
 
-    def tracking_overlay(self):
-        """(source channel, latest Estimate) while tracking, for the UI overlay; else None."""
-        tracker = self._tracker
+    def tracking_overlay(self) -> dict[str, Estimate]:
+        """The tracker's latest estimate per channel, for the UI overlay (empty when not
+        tracking). The source channel gets it as measured, with its mask. Once the cameras
+        are registered, the other channel gets the same point mapped into its pixels, marked
+        `mapped`."""
+        tracker, calibration = self._tracker, self._calibration
         if tracker is None or tracker.last_estimate is None:
-            return None
-        return tracker.source_channel, tracker.last_estimate
+            return {}
+        estimate, source = tracker.last_estimate, tracker.source_channel
+        overlays = {source: estimate}
+        if calibration is not None and estimate.point_px is not None:
+            for channel in (self._rig.clock_channel.name, self._rig.follower_channel.name):
+                mapped = calibration.map_px(source, channel, estimate.point_px)
+                if channel != source and mapped is not None:
+                    overlays[channel] = Estimate(point_px=mapped, mapped=True)
+        return overlays
 
     def _stop_tracker(self) -> None:
         tracker, self._tracker = self._tracker, None

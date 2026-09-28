@@ -53,6 +53,7 @@ class FlirCamera(Camera):
         self._offset_s: float | None = None        # host time − device time
         self._latched_at = 0.0
         self.incomplete_frames = 0
+        self._exposure_us = float(config.exposure_us)
         if not cam.IsInitialized():
             cam.Init()
         self._configure_common()
@@ -115,6 +116,15 @@ class FlirCamera(Camera):
         self._set("TriggerActivation", "RisingEdge")
         self._set("TriggerOverlap", "ReadOut")   # accept the next trigger during readout
         self._set("TriggerMode", "On")
+
+    def set_exposure(self, exposure_us: float, gain_db: float) -> None:
+        """Exposure and gain for the next run (the camera must not be streaming)."""
+        self._set("ExposureTime", float(exposure_us))
+        self._set("Gain", float(gain_db))
+        self._exposure_us = float(exposure_us)
+
+    def set_frame_rate(self, fps: float) -> None:
+        self._set("AcquisitionFrameRate", float(fps))
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -185,7 +195,7 @@ class FlirCamera(Camera):
     def _host_time(self, device_ns: int) -> float:
         if self._offset_s is None:
             return self._clock()
-        return self._offset_s + device_ns / 1e9 + self.config.exposure_us / 2e6
+        return self._offset_s + device_ns / 1e9 + self._exposure_us / 2e6
 
     def is_open(self) -> bool:
         return self._cam is not None

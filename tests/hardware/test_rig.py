@@ -102,3 +102,21 @@ def test_frames_flow_from_both_cameras(tmp_path):
     assert (a.device_frame_id, b.device_frame_id) == (0, 0)
     assert a.image.dtype == np.uint16 and b.image.shape == (600, 960)
     assert dataclasses.is_dataclass(a)
+
+
+def test_new_settings_are_written_in_an_order_the_camera_accepts(tmp_path):
+    from dataclasses import replace
+    rig, clock, follower, _ = _rig(tmp_path)
+    faster = replace(rig.settings, fps=20, clock_exposure_us=30_000, follower_gain_db=6)
+    clock.log.clear()
+    rig.apply_settings(faster)
+    names = [name for name, _ in clock.log]
+    assert names.index("ExposureTime") < names.index("AcquisitionFrameRate")   # shorten first
+    assert clock.written("AcquisitionFrameRate")[-1] == 20.0
+    assert follower.written("Gain")[-1] == 6.0
+    assert (rig.fps, rig.settings) == (20, faster)
+    slower = replace(faster, fps=5, clock_exposure_us=150_000)
+    clock.log.clear()
+    rig.apply_settings(slower)
+    names = [name for name, _ in clock.log]
+    assert names.index("AcquisitionFrameRate") < names.index("ExposureTime")   # slow down first

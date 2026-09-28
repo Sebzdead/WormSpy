@@ -80,8 +80,16 @@ class SimRig:
                           (self.follower_camera, follower, set(follower_drops),
                            follower_offset_ns))
         self._period_ns = round(1e9 / fps)
+        self._brightness = [1.0, 1.0]    # clock, follower: signal vs reference settings
         self._frame_id = 0
         self._rng = np.random.default_rng(seed)
+
+    def set_camera(self, fps: float, clock_brightness: float,
+                   follower_brightness: float) -> None:
+        """New frame rate, and each camera's signal relative to its reference settings
+        (exposure × linear gain), as a real sensor would respond."""
+        self._period_ns = round(1e9 / fps)
+        self._brightness = [clock_brightness, follower_brightness]
 
     @property
     def frame_period_s(self) -> float:
@@ -95,10 +103,11 @@ class SimRig:
         """Expose one triggered frame pair, then advance the world by one frame period."""
         stage_um = (self.stage.position_um("x"), self.stage.position_um("y"))
         t_ns = self._frame_id * self._period_ns
-        for camera, spec, drops, offset_ns in self._channels:
+        for (camera, spec, drops, offset_ns), brightness in zip(self._channels,
+                                                                self._brightness, strict=True):
             if self._frame_id in drops:
                 continue
-            camera.deliver(Frame(image=self._render(spec, stage_um),
+            camera.deliver(Frame(image=self._render(spec, stage_um, brightness),
                                  device_frame_id=self._frame_id,
                                  capture_ts=t_ns / 1e9,
                                  device_timestamp_ns=t_ns + offset_ns))
@@ -107,9 +116,13 @@ class SimRig:
         self.stage.advance(dt)
         self.worm.step(dt)
 
-    def _render(self, spec: ChannelSpec, stage_um) -> np.ndarray:
+    def _render(self, spec: ChannelSpec, stage_um, brightness: float = 1.0) -> np.ndarray:
         render = render_fluorescence if spec.role == "fluorescence" else render_behaviour
         # the calibration slide replaces the plate: no worm under the objective meanwhile
         worm = _NO_WORM if self.target else self.worm
-        return render(worm, stage_um, spec.geometry, noise_sigma=spec.noise_sigma,
-                      rng=self._rng, target=self.target)
+        image = render(worm, stage_um, spec.geometry, noise_sigma=spec.noise_sigma,
+                       rng=self._rng, target=self.target)
+        if brightness != 1.0:
+            top = np.iinfo(image.dtype).max
+            image = np.clip(image * brightness, 0, top).astype(image.dtype)
+        return image

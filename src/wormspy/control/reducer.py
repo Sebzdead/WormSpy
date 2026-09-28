@@ -12,6 +12,7 @@ from wormspy.control import commands as C
 from wormspy.control import effects as X
 from wormspy.control import events as E
 from wormspy.control.state import Alarm, AppState, Mode, TrackingStatus
+from wormspy.presets import DEFAULT_PRESET, CameraSettings
 
 
 @dataclass(frozen=True)
@@ -173,10 +174,72 @@ def _centre_on(s: AppState, cmd: C.CentreOn) -> Transition:
     return _ok(s, X.CentreOn(channel=cmd.channel, x_px=cmd.x_px, y_px=cmd.y_px))
 
 
-def _apply_preset(s: AppState, cmd: C.ApplyPreset) -> Transition:
+def _camera_locked(s: AppState) -> str | None:
+    """Changing camera settings restarts acquisition, so nothing may depend on it."""
     if s.mode is Mode.RECORDING:
-        return _reject(s, "Camera presets are locked while recording.")
-    return _ok(replace(s, preset=cmd.name), X.ApplyPreset(name=cmd.name))
+        return "Camera settings are locked while recording."
+    if s.calibrating:
+        return "Wait for the calibration to finish."
+    if s.tracking is not TrackingStatus.OFF:
+        return "Turn tracking off before changing camera settings."
+    return None
+
+
+def _preset_named(s: AppState, name: str) -> CameraSettings | None:
+    return next((settings for n, settings in s.presets if n == name), None)
+
+
+def _apply_preset(s: AppState, cmd: C.ApplyPreset) -> Transition:
+    if reason := _camera_locked(s):
+        return _reject(s, reason)
+    settings = _preset_named(s, cmd.name)
+    if settings is None:
+        return _reject(s, f"There is no preset called {cmd.name!r}.")
+    return _ok(s, X.ApplyCameraSettings(settings=settings, preset=cmd.name))
+
+
+def _apply_camera_settings(s: AppState, cmd: C.ApplyCameraSettings) -> Transition:
+    if reason := _camera_locked(s) or cmd.settings.problem():
+        return _reject(s, reason)
+    # Keep the current preset's name if unchanged, else any preset that matches exactly.
+    names = [s.preset] if _preset_named(s, s.preset or "") == cmd.settings else []
+    names += [n for n, settings in s.presets if settings == cmd.settings]
+    return _ok(s, X.ApplyCameraSettings(settings=cmd.settings,
+                                        preset=names[0] if names else None))
+
+
+def _camera_settings_applied(s: AppState, ev: E.CameraSettingsApplied) -> Transition:
+    return _ok(_without_alarm(replace(s, camera_settings=ev.settings, preset=ev.preset),
+                              "camera_settings"))
+
+
+def _camera_settings_failed(s: AppState, ev: E.CameraSettingsFailed) -> Transition:
+    return _ok(_with_alarm(s, "camera_settings", f"Camera settings not applied: {ev.reason}"))
+
+
+def _save_preset(s: AppState, cmd: C.SavePreset) -> Transition:
+    name = cmd.name.strip()
+    if not name:
+        return _reject(s, "Give the preset a name.")
+    if name == DEFAULT_PRESET:
+        return _reject(s, f"{DEFAULT_PRESET} comes from rig.toml; save under another name.")
+    if s.camera_settings is None:
+        return _reject(s, "No camera settings have been applied yet.")
+    if name in dict(s.presets):
+        presets = tuple((n, s.camera_settings if n == name else v) for n, v in s.presets)
+    else:
+        presets = (*s.presets, (name, s.camera_settings))
+    return _ok(replace(s, presets=presets, preset=name), X.WritePresets(presets=presets))
+
+
+def _delete_preset(s: AppState, cmd: C.DeletePreset) -> Transition:
+    if cmd.name == DEFAULT_PRESET:
+        return _reject(s, f"{DEFAULT_PRESET} comes from rig.toml and can't be deleted.")
+    if _preset_named(s, cmd.name) is None:
+        return _reject(s, f"There is no preset called {cmd.name!r}.")
+    presets = tuple((n, v) for n, v in s.presets if n != cmd.name)
+    preset = None if s.preset == cmd.name else s.preset
+    return _ok(replace(s, presets=presets, preset=preset), X.WritePresets(presets=presets))
 
 
 def _with_alarm(s: AppState, kind: str, message: str) -> AppState:
@@ -262,6 +325,11 @@ _HANDLERS: dict[type, Callable[[AppState, object], Transition]] = {
     C.MarkEvent: _mark_event,
     C.CentreOn: _centre_on,
     C.ApplyPreset: _apply_preset,
+    C.ApplyCameraSettings: _apply_camera_settings,
+    E.CameraSettingsApplied: _camera_settings_applied,
+    E.CameraSettingsFailed: _camera_settings_failed,
+    C.SavePreset: _save_preset,
+    C.DeletePreset: _delete_preset,
     C.AcknowledgeAlarm: _acknowledge_alarm,
     E.FramesDropped: _frames_dropped,
     E.AlarmRaised: _alarm_raised,

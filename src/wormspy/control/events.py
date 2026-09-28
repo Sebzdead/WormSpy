@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from wormspy.control.state import TrackingStatus
+from wormspy.presets import CameraSettings
 
 
 @dataclass(frozen=True)
@@ -57,4 +58,15 @@ class CalibrationCompleted:
 
 @dataclass(frozen=True)
 class CalibrationFailed:
+    reason: str
+
+
+@dataclass(frozen=True)
+class CameraSettingsApplied:
+    settings: CameraSettings
+    preset: str | None
+
+
+@dataclass(frozen=True)
+class CameraSettingsFailed:
     reason: str

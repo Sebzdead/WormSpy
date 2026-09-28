@@ -1,9 +1,16 @@
 """Calibration maths against the simulator's ground-truth geometry (ADR 0009)."""
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
-from wormspy.calibration.math import CameraCalibration, fit_matrix, measure_shift
+from wormspy.calibration.math import (
+    CameraCalibration,
+    fit_matrix,
+    measure_shift,
+    register_origin,
+)
 from wormspy.sim.render import ImageGeometry, render_behaviour, render_fluorescence
 from wormspy.sim.worm import SyntheticWorm
 
@@ -79,3 +86,54 @@ def test_calibration_round_trips_through_json():
     again = CameraCalibration.from_json(cal.to_json())
     np.testing.assert_allclose(again.matrix, cal.matrix)
     assert again.image_shape == (300, 400) and again.residual_px == 0.05
+
+
+FLUO_CAM = ImageGeometry(width_px=320, height_px=200, um_per_px=2.0, rotation_deg=1.5)
+BF_CAM = ImageGeometry(width_px=300, height_px=190, um_per_px=2.4, rotation_deg=-2.0,
+                       flip_x=True, offset_px=(13.5, -8.25))
+
+
+def test_registration_finds_where_the_second_camera_sees_the_first_cameras_centre():
+    stage = (500.0, -300.0)
+    origin, match = register_origin(_shot(FLUO_CAM, stage, "fluorescence"), FLUO_CAM.matrix,
+                                    _shot(BF_CAM, stage, "behaviour"), BF_CAM.matrix)
+    assert origin == pytest.approx(BF_CAM.origin_px, abs=0.3)     # despite inverted contrast
+    assert match > 0.1
+
+
+def test_cameras_with_no_common_features_match_poorly():
+    rng = np.random.default_rng(1)
+    noise = rng.normal(100, 10, (190, 300)).astype(np.float32)
+    _, match = register_origin(_shot(FLUO_CAM, (0, 0), "fluorescence"), FLUO_CAM.matrix, noise,
+                               BF_CAM.matrix)
+    assert match < 0.05
+
+
+def test_registered_cameras_map_a_pixel_to_the_same_plate_point():
+    from wormspy.calibration.routine import RigCalibration
+    cal = RigCalibration(cameras={
+        "gcamp": _calibration(FLUO_CAM),
+        "bf": replace(_calibration(BF_CAM), origin_px=tuple(BF_CAM.origin_px))},
+        reference="gcamp")
+    stage = np.array([1000.0, 2000.0])
+    world = stage + (40.0, -25.0)
+    in_fluo = FLUO_CAM.world_to_px(world[None, :], stage)[0]
+    in_bf = BF_CAM.world_to_px(world[None, :], stage)[0]
+    assert cal.map_px("gcamp", "bf", in_fluo) == pytest.approx(tuple(in_bf), abs=1e-6)
+    assert cal.map_px("bf", "gcamp", in_bf) == pytest.approx(tuple(in_fluo), abs=1e-6)
+
+
+def test_unregistered_cameras_do_not_map():
+    from wormspy.calibration.routine import RigCalibration
+    cal = RigCalibration(cameras={"gcamp": _calibration(FLUO_CAM), "bf": _calibration(BF_CAM)},
+                         reference="gcamp", registration="no common features")
+    assert cal.map_px("gcamp", "bf", (10, 10)) is None
+    assert cal.map_px("bf", "bf", (10, 10)) == (10.0, 10.0)
+
+
+def test_origin_round_trips_and_old_files_load_unregistered():
+    cal = replace(_calibration(BF_CAM), origin_px=(163.5, 86.75))
+    assert CameraCalibration.from_json(cal.to_json()).origin_px == (163.5, 86.75)
+    old = cal.to_json()
+    del old["origin_px"]
+    assert CameraCalibration.from_json(old).origin_px is None

@@ -3,6 +3,8 @@
 import enum
 from dataclasses import dataclass
 
+from wormspy.presets import CameraSettings, Presets
+
 
 class Mode(enum.Enum):
     IDLE = "idle"            # cameras not acquiring
@@ -36,7 +38,9 @@ class AppState:
     estimator: str = "dark_object"
     source_channel: str = "behaviour"
     focus_z_um: float | None = None   # stored by Set Focus (ADR 0002)
-    preset: str | None = None         # named camera preset (ADR 0006)
+    camera_settings: CameraSettings | None = None   # applied to the cameras (ADR 0006)
+    preset: str | None = None         # the preset camera_settings match; None once edited
+    presets: Presets = ()             # (name, settings), Default first
     recording_drops: int = 0          # dropped frames in the current Recording
     alarms: tuple[Alarm, ...] = ()
     calibrated: bool = False          # a stage-to-camera calibration is available (ADR 0009)

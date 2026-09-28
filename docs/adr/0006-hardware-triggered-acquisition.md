@@ -63,3 +63,23 @@ fixed, stable rate and exposure is the non-negotiable requirement.
   period apart raise a `pairing_suspect` alarm.
 - A missing camera stops the launcher with a message naming the rig.toml key and the serials
   it found. A missing stage becomes a `hardware` alarm, and the app runs with a NullStage.
+
+## Implementation: presets (2026-09-28)
+
+- A preset is the frame rate plus each camera's exposure and gain (`wormspy.presets`).
+  **Default** is rig.toml's `[cameras]` values: it is read-only and not stored. Saved presets
+  go to `presets.json`, next to rig.toml, and are written atomically.
+- Presets do *not* include ROI/binning, pixel format or channel roles. Those change the image
+  geometry or the recording format, so they stay in rig.toml as part of the rig's wiring.
+  Changing them means recalibrating.
+- Picking a preset applies it at once. Edited values wait for **Apply**. Settings are validated
+  before they reach a camera, e.g. an exposure must fit in the frame period.
+- The cameras can only be reconfigured while stopped, so applying restarts a running live view
+  as a fresh acquisition run. For that reason camera settings are locked while recording,
+  tracking or calibrating.
+- On the hardware, the frame rate and exposures are written in an order the camera accepts.
+  When speeding up, the exposures are shortened first; when slowing down, the frame rate is
+  lowered first.
+- `session.json` and each `recording.json` snapshot the applied settings and the preset name.
+- The simulated rig scales image brightness by exposure × linear gain, so presets can be tried
+  without hardware.

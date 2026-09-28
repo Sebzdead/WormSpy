@@ -244,9 +244,13 @@ class LiveView(QWidget):
         if self._lut_box.currentText() != name:
             self._lut_box.setCurrentText(name)
 
-    def set_tracked_point(self, point: tuple[float, float] | None) -> None:
+    def set_tracked_point(self, point: tuple[float, float] | None, mapped: bool = False) -> None:
+        """A filled dot where this camera's tracker sees the target; a ring where the other
+        camera's target maps to (once the cameras are registered)."""
         self.tracked_point = point
-        self._point_item.setData([] if point is None else [{"pos": point}])
+        style = ({"brush": pg.mkBrush(None), "pen": pg.mkPen(theme.ACCENT, width=2)} if mapped
+                 else {"brush": pg.mkBrush(theme.ACCENT), "pen": pg.mkPen("#0a0a0a", width=1)})
+        self._point_item.setData([] if point is None else [{"pos": point, **style}])
 
     def set_mask(self, mask: np.ndarray | None) -> None:
         self._mask = mask

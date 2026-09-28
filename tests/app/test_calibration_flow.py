@@ -3,6 +3,7 @@ click-to-centre (ADR 0009)."""
 
 import json
 import time
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -22,10 +23,10 @@ BF = ImageGeometry(width_px=160, height_px=120, um_per_px=2.5, rotation_deg=5.0,
 START = (20_000.0, 20_000.0, 3_000.0)
 
 
-def _app(tmp_path, target=True):
+def _app(tmp_path, target=True, bf=BF):
     stage = SimStage({a: (0.0, 50_000.0) for a in "xyz"}, 2000.0, dict(zip("xyz", START)))
     rig = SimRig(SyntheticWorm(seed=0, start_um=(1e6, 1e6)), stage, ChannelSpec(FLUO, "fluorescence"),
-                 ChannelSpec(BF, "behaviour"), fps=20.0)
+                 ChannelSpec(bf, "behaviour"), fps=20.0)
     rig.target = target
     handle = SimRigHandle(rig, clock_name="gcamp", follower_name="bf", speed=10.0)
     store = StateStore(AppState())
@@ -99,3 +100,35 @@ def test_a_saved_calibration_is_loaded_at_startup(tmp_path):
     store2, executor2, _ = _app(tmp_path)
     executor2.wait_idle()
     assert store2.state.calibrated
+
+
+def test_calibration_registers_the_cameras_despite_their_misalignment(tmp_path):
+    misaligned = replace(BF, offset_px=(9.5, -6.0))
+    store, executor, handle = _app(tmp_path, bf=misaligned)
+    _calibrate(store, executor)
+    assert not any(a.kind == "registration" for a in store.state.alarms), store.state.alarms
+    saved = json.loads((tmp_path / "calibration.json").read_text())
+    assert saved["reference"] == "gcamp"
+    assert saved["cameras"]["bf"]["origin_px"] == pytest.approx(list(misaligned.origin_px),
+                                                                abs=0.5)
+    # a plate point seen by the fluorescence camera maps onto the same point in brightfield
+    stage = np.array(_stage_xy(handle))
+    world = stage + (70.0, 40.0)
+    in_fluo = FLUO.world_to_px(world[None, :], stage)[0]
+    in_bf = misaligned.world_to_px(world[None, :], stage)[0]
+    mapped = executor._calibration.map_px("gcamp", "bf", in_fluo)
+    assert np.hypot(*(np.array(mapped) - in_bf)) < 1.0
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+
+
+def test_an_unregistered_calibration_still_calibrates_but_raises_an_alarm(tmp_path, monkeypatch):
+    from wormspy.calibration import routine
+    monkeypatch.setattr(routine, "register_origin", lambda *_: (np.zeros(2), 0.01))
+    store, executor, _ = _app(tmp_path)
+    _calibrate(store, executor)
+    assert store.state.calibrated
+    alarm = next(a for a in store.state.alarms if a.kind == "registration")
+    assert "fluorescent beads" in alarm.message
+    store.dispatch(C.StopLive())
+    executor.wait_idle()

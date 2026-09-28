@@ -41,12 +41,11 @@ code and ADRs (`docs/adr/`), not here. Scope of the rework: `docs/rework/require
 - **Loop drift**: the unbounded divergence between two free-running acquisition loops. The
   hardware trigger eliminates it. Tens of ms of offset between channels was acceptable for the paper's science,
   but drift never was.
-- **Preset**: a named, saved set of camera settings (frame rate, exposures, gain, ROI/binning,
-  pixel format, channel roles). The application owns camera configuration, so SpinView is not
-  needed.
-
-## Sessions and recordings
-
+- **Preset**: a named, saved set of camera settings: frame rate, and each camera's exposure and
+  gain. **Default** is rig.toml's `[cameras]` values; others are saved from the app to
+  `presets.json`. Camera wiring (serials, roles, pixel formats, trigger lines) is rig.toml's,
+  not a preset's. Changing settings restarts the live view, so they are locked while
+  recording, tracking or calibrating.
 - **Session**: one animal on one plate. It is one folder `<date>_<animal-id>/` containing `session.json`,
   which holds the metadata form, notes, the full config, the preset and a calibration snapshot. Live view and
   tracking run continuously through a session.
@@ -67,8 +66,11 @@ code and ADRs (`docs/adr/`), not here. Scope of the rework: `docs/rework/require
 - **Calibration**: a routine that moves the stage by known distances and measures the resulting image
   shift (phase correlation). It yields each camera's px→µm scale plus a rotation/sign matrix. Run it
   when the optics change. The result is stored in config and snapshotted into each session.
-- **Registration**: the brightfield↔fluorescence (or fluorescence↔fluorescence) image transform
-  derived from calibration. Used for overlays and ratiometric analysis.
+- **Registration**: how the two cameras' images line up. Rotation and scale follow from the
+  two calibration matrices. The translation is measured during calibration, when both cameras
+  see the same slide: the second camera's `origin_px` is where it sees the reference (clock)
+  camera's centre. Used for overlays (the tracked point on both feeds) and ratiometric
+  analysis. Not needed for tracking or click-to-centre.
 - **World (plate) position**: stage position plus the tracked point's offset in the field of view, converted
   to µm by calibration. This is where the worm actually is on the plate, e.g. relative to a food patch.
 

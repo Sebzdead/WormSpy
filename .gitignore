@@ -13,3 +13,4 @@ __pycache__/
 # Rig-specific configuration and calibration (see config/rig.example.toml)
 config/rig.toml
 config/calibration.json
+config/presets.json

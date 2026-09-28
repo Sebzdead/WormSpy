@@ -33,10 +33,12 @@ class ChannelConfig:
 class Recorder:
     def __init__(self, recording_dir: Path, clock: ChannelConfig, follower: ChannelConfig,
                  fps: float, on_event: Callable[[object], None],
-                 telemetry: TelemetryFn | None = None, queue_size: int = 64) -> None:
+                 telemetry: TelemetryFn | None = None, queue_size: int = 64,
+                 extra: dict | None = None) -> None:
         self.dir = Path(recording_dir)
         self._clock, self._follower = clock, follower
         self._fps = fps
+        self._extra = dict(extra or {})     # e.g. the camera settings, for recording.json
         self._on_event = on_event
         self._telemetry = telemetry
         self._queue: queue.Queue = queue.Queue(maxsize=queue_size)
@@ -154,5 +156,6 @@ class Recorder:
             "channels": {
                 ch.name: {"role": ch.role, "file": self._writers[ch.name].path.name}
                 for ch in (self._clock, self._follower)},
+            **self._extra,
         }
         (self.dir / "recording.json").write_text(json.dumps(summary, indent=2))

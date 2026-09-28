@@ -13,6 +13,7 @@ from wormspy.acquisition.recorder import ChannelConfig
 from wormspy.config import CamerasConfig, RigConfig
 from wormspy.core.stage import NullStage, Stage
 from wormspy.hardware.flir import FlirCamera, FlirSystem, HardwareError
+from wormspy.presets import CameraSettings
 
 
 class HardwareRig:
@@ -24,11 +25,31 @@ class HardwareRig:
         self.follower_channel = ChannelConfig(cameras.follower.name, cameras.follower.role,
                                               follower.shape)
         self.fps = cameras.fps
+        self.settings = cameras.settings
         self.stage = stage
         self.warnings = warnings
         self._closers = closers
         clock.configure_as_clock(cameras.fps, cameras.clock_output_line)
         follower.configure_as_follower(cameras.follower_trigger_line)
+
+    def apply_settings(self, settings: CameraSettings) -> None:
+        """New frame rate, exposures and gains. Call only while stopped.
+
+        The camera caps the frame rate by the current exposure, and the exposure by the current
+        frame rate. So when speeding up, shorten the exposures first; when slowing down, lower
+        the frame rate first.
+        """
+        def exposures() -> None:
+            self.clock_camera.set_exposure(settings.clock_exposure_us, settings.clock_gain_db)
+            self.follower_camera.set_exposure(settings.follower_exposure_us,
+                                              settings.follower_gain_db)
+        if settings.fps > self.fps:
+            exposures()
+            self.clock_camera.set_frame_rate(settings.fps)
+        else:
+            self.clock_camera.set_frame_rate(settings.fps)
+            exposures()
+        self.settings, self.fps = settings, settings.fps
 
     def now(self) -> float:
         return time.monotonic()        # FlirCamera maps device timestamps onto this clock

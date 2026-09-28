@@ -142,8 +142,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self, bridge: StateBridge, hub: FrameHub, left: tuple[str, str],
                  right: tuple[str, str], status: Callable[[], StatusInfo],
-                 overlay: Callable[[], tuple | None] = lambda: None,
-                 refresh_hz: float = 25.0) -> None:
+                 overlay: Callable[[], dict] = dict,
+                 refresh_hz: float = 25.0,
+                 camera_labels: tuple[str, str] = ("Clock cam", "Follower")) -> None:
         super().__init__()
         self.setWindowTitle("WormsPy")
         self._bridge = bridge
@@ -163,7 +164,7 @@ class MainWindow(QMainWindow):
         self.fps_label = self.header.fps_label
         self.disk_label = self.header.disk_label
         self.alarm_bar = AlarmBar(bridge)
-        self.controls = ControlPanel(bridge)
+        self.controls = ControlPanel(bridge, camera_labels)
 
         feeds = QHBoxLayout()
         feeds.setSpacing(FEED_GAP)
@@ -231,11 +232,11 @@ class MainWindow(QMainWindow):
             view.canvas.setFixedSize(int(h * aspect), int(h))
 
     def _draw_overlay(self) -> None:
-        overlay = self._overlay()
-        channel, estimate = overlay if overlay is not None else (None, None)
+        overlays = self._overlay()
         for view in self._views:
-            mine = estimate if view.channel == channel else None
-            view.set_tracked_point(None if mine is None else mine.point_px)
+            mine = overlays.get(view.channel)
+            view.set_tracked_point(None if mine is None else mine.point_px,
+                                   mapped=mine is not None and mine.mapped)
             view.set_mask(None if mine is None else mine.mask)
 
     def _draw_status(self) -> None:

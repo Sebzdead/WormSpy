@@ -6,12 +6,14 @@ import time
 from pathlib import Path
 
 import cv2
+import pytest
 import tifffile
 
 from wormspy.app.executor import Executor
 from wormspy.control import AppState, Mode, StateStore
 from wormspy.control import commands as C
 from wormspy.core.frames import FrameHub
+from wormspy.presets import load_presets
 from wormspy.sim.handle import SimRigHandle
 from wormspy.sim.render import ImageGeometry
 from wormspy.sim.rig import ChannelSpec, SimRig
@@ -21,14 +23,19 @@ from wormspy.sim.worm import SyntheticWorm
 GEOM = ImageGeometry(width_px=48, height_px=32, um_per_px=30.0)
 
 
-def _app(tmp_path, clock_drops=(), speed=10.0):
+def _app(tmp_path, clock_drops=(), speed=10.0, with_presets=False):
     stage = SimStage({a: (0.0, 1e7) for a in "xyz"}, 1000.0,
                      {"x": 1000.0, "y": 2000.0, "z": 3000.0})
     rig = SimRig(SyntheticWorm(seed=0), stage, ChannelSpec(GEOM, "fluorescence"),
                  ChannelSpec(GEOM, "behaviour"), fps=20.0, clock_drops=clock_drops)
     handle = SimRigHandle(rig, clock_name="gcamp", follower_name="bf", speed=speed)
-    store, hub = StateStore(AppState()), FrameHub()
-    executor = Executor(store, handle, hub, data_root=tmp_path / "data")
+    state = AppState()
+    if with_presets:        # as the launcher starts: Default applied, saved presets loaded
+        state = AppState(camera_settings=handle.settings, preset="Default",
+                         presets=load_presets(tmp_path / "presets.json", handle.settings))
+    store, hub = StateStore(state), FrameHub()
+    executor = Executor(store, handle, hub, data_root=tmp_path / "data",
+                        presets_path=tmp_path / "presets.json")
     return store, hub, executor, handle
 
 
@@ -200,14 +207,76 @@ def test_set_focus_stores_z_and_return_to_focus_moves_back(tmp_path):
     executor.wait_idle()
 
 
-def test_effects_not_built_yet_raise_a_visible_alarm(tmp_path):
+def test_an_effect_without_a_handler_raises_a_visible_alarm(tmp_path):
     store, _, executor, _ = _app(tmp_path)
-    store.dispatch(C.StartLive())
-    store.dispatch(C.ApplyPreset(name="calcium-10Hz"))       # camera presets: not built yet
+
+    class NotBuiltYet:
+        pass
+    executor._effects.put(NotBuiltYet())
     executor.wait_idle()
     assert any(a.kind == "not_implemented" for a in store.state.alarms)
+    executor.close()
+
+
+def _presets_app(tmp_path):
+    return _app(tmp_path, with_presets=True)
+
+
+def test_new_camera_settings_restart_the_live_view_with_the_new_rate_and_exposure(tmp_path):
+    from dataclasses import replace
+    store, hub, executor, handle = _presets_app(tmp_path)
+    store.dispatch(C.StartLive())
+    executor.wait_idle()
+    _wait(lambda: hub.latest("gcamp") is not None)
+    before = float(hub.latest("gcamp").image.mean())
+    brighter = replace(handle.settings, fps=10.0,
+                       clock_exposure_us=handle.settings.clock_exposure_us * 2)
+    store.dispatch(C.ApplyCameraSettings(brighter))
+    executor.wait_idle()
+    assert store.state.camera_settings == brighter and store.state.preset is None
+    assert store.state.mode is Mode.LIVE and handle.fps == 10.0
+    start = hub.latest("gcamp").device_frame_id
+    _wait(lambda: hub.latest("gcamp").device_frame_id > start + 2)
+    assert float(hub.latest("gcamp").image.mean()) == pytest.approx(2 * before, rel=0.1)
     store.dispatch(C.StopLive())
     executor.wait_idle()
+    executor.close()
+
+
+def test_saved_presets_are_written_to_disk_and_the_session_records_the_settings(tmp_path):
+    store, hub, executor, handle = _presets_app(tmp_path)
+    store.dispatch(C.SavePreset(name="bright"))
+    executor.wait_idle()
+    assert [n for n, _ in load_presets(tmp_path / "presets.json", handle.settings)] == [
+        "Default", "bright"]
+    folder = _record(store, executor, hub, frames=3)
+    session = json.loads((folder.parent / "session.json").read_text())
+    assert session["config"]["camera"]["preset"] == "bright"
+    recording = json.loads((folder / "recording.json").read_text())
+    assert recording["camera"]["settings"]["fps"] == handle.settings.fps
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+    executor.close()
+
+
+def test_a_camera_that_rejects_the_settings_raises_an_alarm_and_the_view_comes_back(tmp_path):
+    from dataclasses import replace
+    store, hub, executor, handle = _presets_app(tmp_path)
+    store.dispatch(C.StartLive())
+    executor.wait_idle()
+
+    def refuse(_settings):
+        raise RuntimeError("ExposureTime is not writable")
+    handle.apply_settings = refuse
+    store.dispatch(C.ApplyCameraSettings(replace(handle.settings, clock_gain_db=3)))
+    executor.wait_idle()
+    assert any(a.kind == "camera_settings" for a in store.state.alarms)
+    assert store.state.camera_settings == handle.settings
+    start = hub.latest("gcamp").device_frame_id if hub.latest("gcamp") else -1
+    _wait(lambda: hub.latest("gcamp") is not None and hub.latest("gcamp").device_frame_id != start)
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+    executor.close()
 
 
 def test_pairs_captured_a_frame_apart_raise_a_pairing_alarm_once(tmp_path):

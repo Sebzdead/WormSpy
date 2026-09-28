@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from wormspy.presets import CameraSettings
+
 
 @dataclass(frozen=True)
 class StartLive:
@@ -79,6 +81,24 @@ class CentreOn:
 
 @dataclass(frozen=True)
 class ApplyPreset:
+    """Apply a saved camera preset (ADR 0006). Not while recording, tracking or calibrating."""
+    name: str
+
+
+@dataclass(frozen=True)
+class ApplyCameraSettings:
+    """Apply edited camera settings; they match a preset only if identical to one."""
+    settings: CameraSettings
+
+
+@dataclass(frozen=True)
+class SavePreset:
+    """Save the applied camera settings under `name` (replacing a preset of that name)."""
+    name: str
+
+
+@dataclass(frozen=True)
+class DeletePreset:
     name: str
 
 

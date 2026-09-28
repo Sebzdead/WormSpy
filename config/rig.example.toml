@@ -2,6 +2,7 @@
 # Every key is optional; omitted keys use the defaults shown here.
 
 [cameras]
+# These values are the "Default" camera preset. Other presets are saved from the app.
 fps = 10                       # set by the clock camera; the follower fires once per frame
 # GPIO wiring (ADR 0006): the clock camera's ExposureActive is output on clock_output_line,
 # cabled to the follower's trigger input. Defaults follow FLIR's Blackfly S sync app note.
@@ -59,3 +60,4 @@ Y = "SetFocus"
 [paths]
 data_root = "~/WormsPy_data"   # sessions are created here as <date>_<animal-id>/
 # calibration = "calibration.json"   # default: next to this file
+# presets = "presets.json"            # camera presets saved from the app; default: next to this file

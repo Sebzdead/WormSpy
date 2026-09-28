@@ -4,6 +4,8 @@ the filesystem, and reports the outcomes back as Events."""
 from dataclasses import dataclass, field
 from typing import Any
 
+from wormspy.presets import CameraSettings, Presets
+
 
 @dataclass(frozen=True)
 class StartAcquisition:
@@ -61,8 +63,16 @@ class CentreOn:
 
 
 @dataclass(frozen=True)
-class ApplyPreset:
-    name: str
+class ApplyCameraSettings:
+    """Reconfigure the cameras. Acquisition restarts around it if the view is live."""
+    settings: CameraSettings
+    preset: str | None
+
+
+@dataclass(frozen=True)
+class WritePresets:
+    """Persist the saved presets (Default is never written)."""
+    presets: Presets
 
 
 @dataclass(frozen=True)

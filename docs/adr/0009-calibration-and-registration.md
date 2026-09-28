@@ -52,8 +52,17 @@ analysis needs the two channels registered.
 - **Accuracy on the simulated rig:** matrices are within 1% of the true scale, rotation and mirror
   for both cameras, and click-to-centre lands within 2 µm. Sub-pixel shift estimation has a bias of
   about 0.1 px (OpenCV's centroid peak refinement). That is negligible for moves of about 100 px.
-- **Not yet done: the translation offset between the two cameras' image centres.** The two
-  matrices give the rotation and scale between the channels, but not their offset. Measuring it
-  needs a feature seen by both cameras. A fluorescent bead slide under transmitted light would
-  work: the beads appear dark in brightfield and bright in fluorescence. This matters for overlays
-  and ratiometric analysis, not for tracking or click-to-centre.
+- **Registration (added 2026-09-28).** The clock (calcium) camera is the reference: the stage
+  position is the world point at its image centre. The other camera sees that point at
+  `origin_px`, measured from the images taken before the pattern moves:
+  - the reference image is warped into the other camera's pixel grid using the two fitted
+    matrices, then phase-correlated against the other camera's image;
+  - both polarities are tried, because fluorescent beads under transmitted light are dark in
+    brightfield and bright in fluorescence.
+
+  On the simulated rig this recovers a 9.5 × −6 px offset to within 0.5 px, across different
+  scales, rotations and a mirror. If the cameras share no features (a match below 0.05), the
+  calibration is still saved but a `registration` alarm explains what slide to use. Files from
+  before registration load as unregistered.
+- `RigCalibration.map_px` maps a pixel between cameras. The tracked point is drawn on both
+  feeds: a filled dot where it is measured, and a ring where it maps to on the other camera.

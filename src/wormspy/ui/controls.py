@@ -1,4 +1,4 @@
-"""ControlPanel: the sidebar (ADR 0004/0010).
+"""ControlPanel: the row of control cards below the feeds (ADR 0004/0010).
 
 Buttons only dispatch Commands. `render(state)` is the single place that sets every enabled
 state and label, so the panel always shows what the state machine says, never a local guess.
@@ -25,6 +25,7 @@ from wormspy.control import AppState, Mode, TrackingStatus
 from wormspy.control import commands as C
 from wormspy.ui import theme
 from wormspy.ui.bridge import StateBridge
+from wormspy.ui.camera_card import CameraCard
 
 ESTIMATORS = (("dark_object", "Brightfield silhouette", "behaviour"),
               ("bright_marker", "Fluorescent marker", "fluorescence"))
@@ -39,7 +40,8 @@ TRACKING_TEXT = {
 
 
 class ControlPanel(QWidget):
-    def __init__(self, bridge: StateBridge) -> None:
+    def __init__(self, bridge: StateBridge,
+                 camera_labels: tuple[str, str] = ("Clock cam", "Follower")) -> None:
         super().__init__()
         self._bridge = bridge
         self._state = bridge.state
@@ -122,6 +124,9 @@ class ControlPanel(QWidget):
         trk.addRow("Status", self.tracking_label)
         layout.addWidget(tracking, 2)
 
+        self.cameras = CameraCard(bridge, camera_labels)
+        layout.addWidget(self.cameras, 3)
+
         # focus and calibration: both about where the stage is
         stage = QGroupBox("FOCUS && CALIBRATION")
         stg = QVBoxLayout(stage)
@@ -176,6 +181,7 @@ class ControlPanel(QWidget):
 
     def render(self, s: AppState) -> None:
         self._state = s
+        self.cameras.render(s)
         live, recording = s.mode is not Mode.IDLE, s.mode is Mode.RECORDING
         busy = s.calibrating
         tracking_on = s.tracking is not TrackingStatus.OFF

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from wormspy.control import commands as C
 from wormspy.control.gamepad import DEFAULT_BUTTONS, StickConfig
+from wormspy.presets import CameraSettings, exposure_budget_us
 
 AXES = ("x", "y", "z")
 # Travel of the reference rig: 2× Zaber TSB60E (50.4 mm) and VSR20A (20 mm). Narrow Z in
@@ -34,8 +35,6 @@ class StageConfig:
 
 ROLES = ("fluorescence", "behaviour")
 PIXEL_FORMATS = ("Mono8", "Mono16")
-# Time the sensor needs between exposures at the reference frame rates (readout + margin).
-EXPOSURE_MARGIN_US = 2000.0
 
 
 @dataclass(frozen=True)
@@ -60,6 +59,14 @@ class CamerasConfig:
     clock_output_line: str = "Line2"        # carries the clock camera's ExposureActive
     follower_trigger_line: str = "Line3"    # the follower's trigger input
 
+    @property
+    def settings(self) -> CameraSettings:
+        """rig.toml's frame rate, exposures and gains: the Default preset."""
+        return CameraSettings(fps=self.fps, clock_exposure_us=self.clock.exposure_us,
+                              clock_gain_db=self.clock.gain_db,
+                              follower_exposure_us=self.follower.exposure_us,
+                              follower_gain_db=self.follower.gain_db)
+
 
 @dataclass(frozen=True)
 class GamepadConfig:
@@ -71,6 +78,7 @@ class GamepadConfig:
 class PathsConfig:
     data_root: Path
     calibration: Path
+    presets: Path
 
 
 @dataclass(frozen=True)
@@ -122,7 +130,7 @@ def _camera(raw: dict, default: CameraConfig, key: str, fps: float) -> CameraCon
         raise ConfigError(f"{key}.pixel_format must be one of {list(PIXEL_FORMATS)}")
     if camera.role == "fluorescence" and camera.pixel_format != "Mono16":
         raise ConfigError(f"{key}: fluorescence is recorded raw 16-bit; use Mono16 (ADR 0007)")
-    budget = 1e6 / fps - EXPOSURE_MARGIN_US
+    budget = exposure_budget_us(fps)
     if not 0 < camera.exposure_us <= budget:
         raise ConfigError(f"{key}.exposure_us must be in (0, {budget:.0f}] at {fps:g} fps")
     return camera
@@ -142,11 +150,15 @@ def _cameras(raw: dict) -> CamerasConfig:
         raise ConfigError("cameras: clock and follower need different names")
     if clock.serial and clock.serial == follower.serial:
         raise ConfigError("cameras: clock and follower have the same serial number")
-    return CamerasConfig(
+    cameras = CamerasConfig(
         fps=fps, clock=clock, follower=follower,
         clock_output_line=str(raw.get("clock_output_line", defaults.clock_output_line)),
         follower_trigger_line=str(raw.get("follower_trigger_line",
                                           defaults.follower_trigger_line)))
+    problem = cameras.settings.problem()
+    if problem:
+        raise ConfigError(f"cameras: {problem}")
+    return cameras
 
 
 def _stage(raw: dict) -> StageConfig:
@@ -191,4 +203,6 @@ def _gamepad(raw: dict) -> GamepadConfig:
 def _paths(raw: dict, config_path: Path) -> PathsConfig:
     data_root = Path(raw.get("data_root", Path.home() / "WormsPy_data")).expanduser()
     calibration = Path(raw.get("calibration", config_path.parent / "calibration.json"))
-    return PathsConfig(data_root=data_root, calibration=calibration.expanduser())
+    presets = Path(raw.get("presets", config_path.parent / "presets.json"))
+    return PathsConfig(data_root=data_root, calibration=calibration.expanduser(),
+                       presets=presets.expanduser())

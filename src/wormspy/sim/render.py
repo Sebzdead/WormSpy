@@ -2,8 +2,8 @@
 
 `ImageGeometry` holds the ground-truth stage→image transform for one camera. That transform
 (px per µm, rotation, flip) is exactly what the calibration routine must recover (ADR 0009). The
-stage position is the world point at the centre of the field of view, so moving the stage by +d
-shifts the worm's image by -d.
+stage position is the world point at the centre of the field of view (plus `offset_px`, the
+camera's misalignment), so moving the stage by +d shifts the worm's image by -d.
 """
 
 import math
@@ -22,6 +22,9 @@ class ImageGeometry:
     um_per_px: float
     rotation_deg: float = 0.0
     flip_x: bool = False
+    # Where the stage point appears, relative to the image centre. Two cameras behind one
+    # objective are never perfectly aligned; this is the offset calibration must measure.
+    offset_px: tuple[float, float] = (0.0, 0.0)
     matrix: np.ndarray = field(init=False, repr=False, compare=False)  # px per µm, 2x2
 
     def __post_init__(self) -> None:
@@ -34,13 +37,18 @@ class ImageGeometry:
     def centre_px(self) -> np.ndarray:
         return np.array([self.width_px / 2, self.height_px / 2])
 
+    @property
+    def origin_px(self) -> np.ndarray:
+        """The pixel that sees the stage position."""
+        return self.centre_px + np.asarray(self.offset_px, float)
+
     def world_to_px(self, points_um: np.ndarray, stage_um) -> np.ndarray:
         """(N, 2) world µm -> (N, 2) pixel (x=col, y=row) for the given stage position."""
         delta = np.asarray(points_um, float) - np.asarray(stage_um, float)
-        return delta @ self.matrix.T + self.centre_px
+        return delta @ self.matrix.T + self.origin_px
 
     def px_to_world(self, points_px: np.ndarray, stage_um) -> np.ndarray:
-        delta = np.asarray(points_px, float) - self.centre_px
+        delta = np.asarray(points_px, float) - self.origin_px
         return delta @ np.linalg.inv(self.matrix).T + np.asarray(stage_um, float)
 
 

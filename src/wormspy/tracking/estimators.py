@@ -24,6 +24,7 @@ class Estimate:
     point_px: tuple[float, float] | None   # (x, y) in full-resolution pixels; None = no target
     area_px: float = 0.0
     mask: np.ndarray | None = None         # full-resolution bool mask, for the overlay
+    mapped: bool = False                   # mapped from the other camera, not measured here
 
 
 NOTHING = Estimate(point_px=None)

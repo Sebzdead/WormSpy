@@ -18,6 +18,7 @@ from wormspy.control import commands as C
 from wormspy.control import events as E
 from wormspy.control.gamepad import GamepadController
 from wormspy.core.frames import FrameHub
+from wormspy.presets import DEFAULT_PRESET, load_presets
 from wormspy.sim.handle import SimRigHandle
 from wormspy.sim.render import ImageGeometry
 from wormspy.sim.rig import ChannelSpec, SimRig
@@ -27,6 +28,10 @@ from wormspy.sim.worm import SyntheticWorm
 DEFAULT_CONFIG = Path("config/rig.toml")
 # The reference rig: 1920×1200 px at ~0.75 µm/px → 1440 × 900 µm field of view.
 SIM_GEOMETRY = ImageGeometry(width_px=1920, height_px=1200, um_per_px=0.75, rotation_deg=1.5)
+# The behaviour camera sits slightly off the calcium camera, as on a real rig; calibration
+# with the slide measures the offset (ADR 0009).
+SIM_BEHAVIOUR_GEOMETRY = ImageGeometry(width_px=1920, height_px=1200, um_per_px=0.75,
+                                       rotation_deg=2.1, offset_px=(14.0, -9.0))
 
 
 @dataclass
@@ -71,8 +76,10 @@ def _sim_rig(config: RigConfig, speed: float) -> SimRigHandle:
     stage = SimStage(safe, config.stage.max_speed_um_s, centre)
     worm = SyntheticWorm(seed=0, start_um=(centre["x"], centre["y"]), speed_um_s=150.0)
     rig = SimRig(worm, stage, ChannelSpec(SIM_GEOMETRY, "fluorescence", noise_sigma=300.0),
-                 ChannelSpec(SIM_GEOMETRY, "behaviour", noise_sigma=4.0), fps=10.0)
-    return SimRigHandle(rig, clock_name="gcamp", follower_name="brightfield", speed=speed)
+                 ChannelSpec(SIM_BEHAVIOUR_GEOMETRY, "behaviour", noise_sigma=4.0),
+                 fps=config.cameras.settings.fps)
+    return SimRigHandle(rig, clock_name="gcamp", follower_name="brightfield", speed=speed,
+                        settings=config.cameras.settings)
 
 
 def _gamepad(config: RigConfig, stage, store) -> GamepadController | None:
@@ -108,7 +115,13 @@ def _views(rig) -> tuple[tuple[str, str], tuple[str, str]]:
     """Behaviour on the left, fluorescence on the right (as in v1)."""
     channels = sorted((rig.clock_channel, rig.follower_channel),
                       key=lambda ch: ch.role != "behaviour")
-    return tuple((ch.name, ch.name.replace("_", " ").title()) for ch in channels)
+    return tuple((ch.name, _label(ch.name)) for ch in channels)
+
+
+def _label(channel: str) -> str:
+    """A channel name as operators write it: "gcamp" -> "GCaMP", "brightfield" -> "Brightfield"."""
+    known = {"gcamp": "GCaMP", "dsred": "DsRed", "rfp": "RFP", "gfp": "GFP"}
+    return known.get(channel.lower(), channel.replace("_", " ").title())
 
 
 def build(argv: list[str]) -> App:
@@ -127,12 +140,21 @@ def build(argv: list[str]) -> App:
     except ValueError as exc:                  # ConfigError names the offending key
         raise SystemExit(f"wormspy: {exc}") from exc
     rig = _sim_rig(config, args.sim_speed) if args.sim else _hardware_rig(config)
-    store, hub = StateStore(AppState()), FrameHub()
-    for warning in getattr(rig, "warnings", ()):
+    warnings = list(getattr(rig, "warnings", ()))
+    try:
+        presets = load_presets(config.paths.presets, rig.settings)
+    except ValueError as exc:
+        presets = ((DEFAULT_PRESET, rig.settings),)
+        warnings.append(f"{exc}. Only the Default preset is available.")
+    store = StateStore(AppState(camera_settings=rig.settings, preset=DEFAULT_PRESET,
+                                presets=presets))
+    hub = FrameHub()
+    for warning in warnings:
         store.dispatch(E.AlarmRaised(kind="hardware", message=warning))
     gamepad = _gamepad(config, rig.stage, store)
     executor = Executor(store, rig, hub, data_root=config.paths.data_root,
                         calibration_path=config.paths.calibration,
+                        presets_path=config.paths.presets,
                         override=(lambda: gamepad.xy_active) if gamepad else (lambda: False))
 
     def status() -> StatusInfo:
@@ -144,8 +166,9 @@ def build(argv: list[str]) -> App:
         left, right = ("brightfield", "Brightfield"), ("gcamp", "Fluorescence")
     else:
         left, right = _views(rig)
+    labels = (_label(rig.clock_channel.name), _label(rig.follower_channel.name))
     window = MainWindow(StateBridge(store), hub, left=left, right=right, status=status,
-                        overlay=executor.tracking_overlay)
+                        overlay=executor.tracking_overlay, camera_labels=labels)
     slide = None
     if args.sim:
         window.setWindowTitle("WormsPy — simulated rig")
