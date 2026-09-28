@@ -65,9 +65,10 @@ class CameraCard(QGroupBox):
         self.apply_button.clicked.connect(self.apply)
 
         grid = QGridLayout(self)
-        grid.setHorizontalSpacing(8)
+        grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(6)
         presets = QHBoxLayout()
+        presets.setSpacing(8)
         presets.addWidget(self.preset_box, 1)
         presets.addWidget(self.save_button)
         presets.addWidget(self.delete_button)

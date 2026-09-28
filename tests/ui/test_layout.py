@@ -1,4 +1,4 @@
-"""Layout and theme: feeds fill the width at the camera aspect, controls below, dark + green."""
+"""Layout and theme: feeds fill the width at the camera aspect, controls below, dark theme."""
 
 import numpy as np
 from PySide6.QtGui import QPalette
@@ -63,7 +63,7 @@ def test_a_short_window_shrinks_the_feeds_but_keeps_their_aspect(qtbot):
     assert controls_bottom <= window.height()              # nothing pushed off screen
 
 
-def test_dark_theme_with_the_wormspy_green(qtbot):
+def test_dark_theme_with_the_wormspy_accent(qtbot):
     window, _store = _window(qtbot)
     palette = QApplication.instance().palette()
     assert palette.color(QPalette.ColorRole.Window).lightness() < 40

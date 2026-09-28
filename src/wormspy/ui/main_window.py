@@ -41,11 +41,11 @@ class AlarmBar(QFrame):
     def __init__(self, bridge: StateBridge) -> None:
         super().__init__()
         self._bridge = bridge
-        self.setStyleSheet(f"AlarmBar {{ background: #3a1414; border: 1px solid #7a2a2a;"
-                           f" border-radius: 6px; }} QLabel {{ color: {theme.RED};"
-                           " font-weight: 600; }")
+        self.setStyleSheet(f"AlarmBar {{ background: {theme.RED_BG}; border: 1px solid"
+                           f" {theme.RED_DIM}; border-radius: 8px; }} QLabel {{ color:"
+                           f" {theme.RED}; font-weight: 600; }}")
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.setContentsMargins(14, 6, 8, 6)
         self._rows: list[tuple[QLabel, QPushButton]] = []
         bridge.state_changed.connect(self.render)
         self.render(bridge.state)
@@ -79,25 +79,56 @@ MARGIN = 12
 FEED_GAP = 10
 
 
+class Readouts(QFrame):
+    """The live readouts, top right: each value under a caption saying what it is."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("readouts")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(12, 4, 12, 5)
+        row.setSpacing(14)
+        self.values: list[QLabel] = []
+        for index, (caption, tip) in enumerate((
+                ("STAGE POSITION", "Where the stage is, in µm"),
+                ("FRAME RATE", "Frame rate measured from each camera's frames"),
+                ("DISK", "Free space where recordings are saved"))):
+            if index:
+                divider = QFrame()
+                divider.setObjectName("readoutDivider")
+                divider.setFixedWidth(1)
+                row.addWidget(divider)
+            tile = QVBoxLayout()
+            tile.setSpacing(1)
+            title = QLabel(caption)
+            title.setObjectName("readoutCaption")
+            value = QLabel("—")
+            value.setObjectName("readout")
+            value.setFont(theme.mono_font(11))
+            for label in (title, value):
+                label.setToolTip(tip)
+                tile.addWidget(label)
+            row.addLayout(tile)
+            self.values.append(value)
+
+
 class Header(QWidget):
     """The WormsPy wordmark, mode chips and live readouts, in one slim bar."""
 
     def __init__(self, bridge: StateBridge) -> None:
         super().__init__()
         self.wordmark = QLabel("WormsPy")
-        self.wordmark.setStyleSheet(f"color: {theme.ACCENT}; font-size: 26px; font-weight: 800;"
+        self.wordmark.setStyleSheet(f"color: {theme.ACCENT}; font-size: 24px; font-weight: 800;"
                                     "letter-spacing: -0.5px;")
         version = QLabel("v2")
         version.setObjectName("muted")
         self.mode_chip, self.rec_chip, self.tracking_chip = (QLabel() for _ in range(3))
         for chip in (self.mode_chip, self.rec_chip, self.tracking_chip):
             chip.setObjectName("chip")
-        self.xyz_label, self.fps_label, self.disk_label = (QLabel() for _ in range(3))
-        for label in (self.xyz_label, self.fps_label, self.disk_label):
-            label.setObjectName("readout")
-            label.setFont(theme.mono_font())
+        self.readouts = Readouts()
+        self.xyz_label, self.fps_label, self.disk_label = self.readouts.values
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
+        row.setContentsMargins(2, 0, 0, 0)
         row.setSpacing(10)
         row.addWidget(self.wordmark)
         row.addWidget(version, 0, Qt.AlignmentFlag.AlignBottom)
@@ -106,11 +137,7 @@ class Header(QWidget):
         row.addWidget(self.rec_chip)
         row.addWidget(self.tracking_chip)
         row.addStretch(1)
-        row.addWidget(self.xyz_label)
-        row.addSpacing(14)
-        row.addWidget(self.fps_label)
-        row.addSpacing(14)
-        row.addWidget(self.disk_label)
+        row.addWidget(self.readouts)
         bridge.state_changed.connect(self.render)
         self.render(bridge.state)
 
@@ -175,7 +202,7 @@ class MainWindow(QMainWindow):
         central = QWidget()
         central.setObjectName("central")
         self._column = QVBoxLayout(central)
-        self._column.setContentsMargins(MARGIN, 6, MARGIN, MARGIN)
+        self._column.setContentsMargins(MARGIN, 8, MARGIN, MARGIN)
         self._column.setSpacing(8)
         self._column.addWidget(self.header)
         self._column.addWidget(self.alarm_bar)
@@ -224,7 +251,7 @@ class MainWindow(QMainWindow):
         others = (self.header.sizeHint().height() + self.controls.sizeHint().height()
                   + (0 if self.alarm_bar.isHidden() else self.alarm_bar.sizeHint().height())
                   + max(view.chrome_height() for view in self._views)
-                  + 6 + MARGIN + 4 * spacing)
+                  + 8 + MARGIN + 4 * spacing)
         height_left = central.height() - others
         aspects = [view.aspect for view in self._views]
         h = max(60, min(width / sum(aspects), height_left))
@@ -243,7 +270,7 @@ class MainWindow(QMainWindow):
         info = self._status()
         if info.xyz_um is not None:
             x, y, z = info.xyz_um
-            self.xyz_label.setText(f"X {x:.1f} · Y {y:.1f} · Z {z:.1f} µm")
+            self.xyz_label.setText(f"X {x:.1f}  Y {y:.1f}  Z {z:.1f}")
         if info.disk_free_bytes is not None:
             self.disk_label.setText(f"{info.disk_free_bytes / 1e9:.0f} GB free")
         rates = []
@@ -251,8 +278,8 @@ class MainWindow(QMainWindow):
             samples = self._rates[view.channel]
             if len(samples) >= 2 and samples[-1][1] > samples[0][1]:
                 fps = (samples[-1][0] - samples[0][0]) / (samples[-1][1] - samples[0][1])
-                rates.append(f"{view.channel} {fps:.1f} fps")
-        self.fps_label.setText(" · ".join(rates))
+                rates.append(f"{view.channel} {fps:.1f}")
+        self.fps_label.setText("  ".join(rates) + " fps" if rates else "—")
 
     def closeEvent(self, event) -> None:
         self._timer.stop()

@@ -31,11 +31,11 @@ ESTIMATORS = (("dark_object", "Brightfield silhouette", "behaviour"),
               ("bright_marker", "Fluorescent marker", "fluorescence"))
 SOURCES = (("behaviour", "Brightfield camera"), ("fluorescence", "Fluorescence camera"))
 TRACKING_TEXT = {
-    TrackingStatus.OFF: ("Off", "#858b85"),
-    TrackingStatus.TRACKING: ("Tracking", "#39ff5a"),
-    TrackingStatus.LOST: ("Target lost", "#ff4d4d"),
-    TrackingStatus.OVERRIDE: ("Joystick override", "#f0b040"),
-    TrackingStatus.LIMIT: ("At stage limit", "#f0b040"),
+    TrackingStatus.OFF: ("Off", theme.MUTED),
+    TrackingStatus.TRACKING: ("Tracking", theme.ACCENT),
+    TrackingStatus.LOST: ("Target lost", theme.RED),
+    TrackingStatus.OVERRIDE: ("Joystick override", theme.AMBER),
+    TrackingStatus.LIMIT: ("At stage limit", theme.AMBER),
 }
 
 
@@ -52,15 +52,17 @@ class ControlPanel(QWidget):
         # session (and the live switch: nothing happens before the camera runs)
         session = QGroupBox("SESSION")
         grid = QGridLayout(session)
-        grid.setHorizontalSpacing(8)
+        grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(6)
         self.live_button = QPushButton("Start live")
         self.live_button.setProperty("role", "primary")
         self.live_button.clicked.connect(self._toggle_live)
         self.animal_id, self.operator, self.condition = QLineEdit(), QLineEdit(), QLineEdit()
         self.animal_id.setPlaceholderText("e.g. N2 #3")
+        for field in (self.animal_id, self.operator, self.condition):
+            field.setMinimumWidth(96)
         self.notes = QPlainTextEdit()
-        self.notes.setFixedHeight(28)
+        self.notes.setFixedHeight(30)
         self.notes.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.notes.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.new_session_button = QPushButton("New session")
@@ -85,16 +87,20 @@ class ControlPanel(QWidget):
         # recording
         recording = QGroupBox("RECORDING")
         rec_layout = QVBoxLayout(recording)
+        rec_layout.setSpacing(6)
         self.record_button = QPushButton()
         self.record_button.clicked.connect(lambda: bridge.dispatch(C.ToggleRecording()))
         self.recording_label = QLabel()
+        self.recording_label.setObjectName("muted")
         self.recording_label.setFont(theme.mono_font())
         self.event_label = QLineEdit()
         self.event_label.setPlaceholderText("event label")
+        self.event_label.setMinimumWidth(96)
         self.mark_button = QPushButton("Mark event")
         self.mark_button.clicked.connect(
             lambda: bridge.dispatch(C.MarkEvent(label=self.event_label.text() or "marker")))
         marker_row = QHBoxLayout()
+        marker_row.setSpacing(8)
         marker_row.addWidget(self.event_label, 1)
         marker_row.addWidget(self.mark_button)
         rec_layout.addWidget(self.record_button)
@@ -106,6 +112,9 @@ class ControlPanel(QWidget):
         # tracking
         tracking = QGroupBox("TRACKING")
         trk = QFormLayout(tracking)
+        trk.setHorizontalSpacing(12)
+        trk.setVerticalSpacing(6)
+        trk.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.estimator_box = QComboBox()
         for key, label, _source in ESTIMATORS:
             self.estimator_box.addItem(label, key)
@@ -118,10 +127,10 @@ class ControlPanel(QWidget):
         self.track_button.setProperty("role", "primary")
         self.track_button.clicked.connect(lambda: bridge.dispatch(C.ToggleTracking()))
         self.tracking_label = QLabel()
-        trk.addRow("Target", self.estimator_box)
-        trk.addRow("Camera", self.source_box)
+        trk.addRow(self._muted("Target"), self.estimator_box)
+        trk.addRow(self._muted("Camera"), self.source_box)
         trk.addRow(self.track_button)
-        trk.addRow("Status", self.tracking_label)
+        trk.addRow(self._muted("Status"), self.tracking_label)
         layout.addWidget(tracking, 2)
 
         self.cameras = CameraCard(bridge, camera_labels)
@@ -130,7 +139,9 @@ class ControlPanel(QWidget):
         # focus and calibration: both about where the stage is
         stage = QGroupBox("FOCUS && CALIBRATION")
         stg = QVBoxLayout(stage)
+        stg.setSpacing(6)
         focus_row = QHBoxLayout()
+        focus_row.setSpacing(8)
         self.set_focus_button = QPushButton("Set focus")
         self.set_focus_button.clicked.connect(lambda: bridge.dispatch(C.SetFocus()))
         self.return_focus_button = QPushButton("Return to focus")
@@ -147,6 +158,7 @@ class ControlPanel(QWidget):
         stg.addLayout(focus_row)
         stg.addWidget(self.focus_label)
         calibration_row = QHBoxLayout()
+        calibration_row.setSpacing(10)
         calibration_row.addWidget(self.calibrate_button)
         calibration_row.addWidget(self.calibration_label, 1)
         stg.addLayout(calibration_row)
@@ -155,6 +167,12 @@ class ControlPanel(QWidget):
 
         bridge.state_changed.connect(self.render)
         self.render(bridge.state)
+
+    @staticmethod
+    def _muted(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("muted")
+        return label
 
     # --- commands ------------------------------------------------------------------------
 
@@ -206,7 +224,7 @@ class ControlPanel(QWidget):
         self.track_button.setEnabled(tracking_on or (live and s.calibrated and not busy))
         text, colour = TRACKING_TEXT[s.tracking]
         self.tracking_label.setText(text)
-        self.tracking_label.setStyleSheet(f"color: {colour}; font-weight: bold;")
+        self.tracking_label.setStyleSheet(f"color: {colour}; font-weight: 600;")
         for box, value in ((self.estimator_box, s.estimator), (self.source_box, s.source_channel)):
             box.blockSignals(True)
             box.setCurrentIndex(max(0, box.findData(value)))

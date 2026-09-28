@@ -34,7 +34,7 @@ from wormspy.ui import theme
 pg.setConfigOptions(imageAxisOrder="row-major", antialias=True)
 
 LUTS = ("grey", "inferno", "viridis", "magma", "plasma", "thermal", "flame")
-MASK_RGBA = (57, 255, 90, 60)          # the WormsPy green, faint
+MASK_RGBA = theme.rgba(theme.ACCENT, 70)   # the WormsPy accent, faint
 DEFAULT_ASPECT = 1920 / 1200
 HISTOGRAM_BINS = 256
 HISTOGRAM_STEP = 4                     # histogram from every 4th pixel in each direction
@@ -78,9 +78,9 @@ class LiveView(QWidget):
         self._mask_item = pg.ImageItem()
         self._mask_item.setVisible(False)
         # v1's green tracking dot, kept as the tracked-point marker
-        self._point_item = pg.ScatterPlotItem(size=11, symbol="o", pen=pg.mkPen("#0a0a0a", width=1),
+        self._point_item = pg.ScatterPlotItem(size=11, symbol="o", pen=pg.mkPen(theme.FEED_BACKGROUND, width=1),
                                               brush=pg.mkBrush(theme.ACCENT))
-        crosshair = pg.mkPen((57, 255, 90, 70), width=1)
+        crosshair = pg.mkPen(theme.rgba(theme.ACCENT, 55), width=1)
         self._cross_h = pg.InfiniteLine(angle=0, pen=crosshair)
         self._cross_v = pg.InfiniteLine(angle=90, pen=crosshair)
         for item in (self.image_item, self._mask_item, self._cross_h, self._cross_v,
@@ -96,11 +96,15 @@ class LiveView(QWidget):
         # We draw the histogram ourselves (fixed bins over the full range, log counts), so
         # pyqtgraph's auto-binned one must not overwrite it on every frame.
         self.image_item.sigImageChanged.disconnect(hist.imageChanged)
-        hist.plot.setBrush((57, 255, 90, 60))
-        hist.plot.setPen((57, 255, 90, 160))
-        hist.region.setBrush((57, 255, 90, 22))
+        hist.plot.setBrush(theme.rgba(theme.ACCENT, 70))
+        hist.plot.setPen(theme.rgba(theme.ACCENT, 170))
+        hist.region.setBrush(theme.rgba(theme.ACCENT, 18))
         for line in hist.region.lines:
-            line.setPen(pg.mkPen((57, 255, 90, 150), width=1))
+            line.setPen(pg.mkPen(theme.rgba(theme.ACCENT, 170), width=1))
+            line.setHoverPen(pg.mkPen(theme.ACCENT, width=2))
+        hist.axis.setStyle(tickFont=theme.mono_font(9), tickTextOffset=4, tickLength=4)
+        hist.axis.setTextPen(theme.MUTED)
+        hist.axis.setPen(theme.BORDER_STRONG)
         hist.vb.setMouseEnabled(x=False, y=False)
         hist.vb.setMenuEnabled(False)
         hist.vb.disableAutoRange()
@@ -122,9 +126,10 @@ class LiveView(QWidget):
 
         self._toolbar = QWidget()
         toolbar = QHBoxLayout(self._toolbar)
-        toolbar.setContentsMargins(2, 4, 2, 0)
+        toolbar.setContentsMargins(4, 6, 0, 2)
+        toolbar.setSpacing(8)
         name = QLabel(title.upper())
-        name.setStyleSheet(f"color: {theme.MUTED}; font-weight: 700; letter-spacing: 1px;")
+        name.setObjectName("feedTitle")
         toolbar.addWidget(name)
         toolbar.addWidget(self.saturation_label)
         toolbar.addStretch(1)
@@ -133,7 +138,7 @@ class LiveView(QWidget):
         toolbar.addWidget(auto)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
+        layout.setSpacing(4)
         layout.addWidget(self.canvas)
         layout.addWidget(self._toolbar)
         layout.addWidget(self._histogram)
