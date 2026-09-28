@@ -83,3 +83,19 @@ ported later as an example, fixing its dead jump-filter bug on the way.
   `frames.csv`, so page *i* of every channel file always matches CSV row *i*.
 - Disk throughput: 1920×1200 at 16 bits and 10 Hz is about 46 MB/s per fluorescence channel.
   Free disk space is shown in the UI.
+
+## Implementation: reader (2026-09-28)
+
+- `wormspy.reader` (`open_recording`, `open_session`) needs the optional `analysis` extra
+  (pandas). The format itself is documented in `docs/recording-format.md`, so no WormsPy code is
+  needed to read the data.
+- Everything is indexed by `frame_index`. `frames.csv` is joined with `tracking.csv`
+  (`track_*` columns). `rec.valid` masks the zero-filled placeholders.
+- Fluorescence loads memory-mapped. Behaviour video is decoded on demand; FFV1 is intra-only,
+  so random access seeks exactly.
+- A cut-short recording (no `recording.json`) still opens: the reader keeps the frames every
+  file has and lists what it noticed in `rec.warnings`.
+- `rec.plate_um` turns a pixel in either camera into a plate position, using the session's
+  calibration snapshot and the camera registration.
+- Tested against recordings written by the real Recorder, and end to end against a recording
+  made by the app on the simulated rig.

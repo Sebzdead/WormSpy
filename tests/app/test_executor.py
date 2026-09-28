@@ -291,3 +291,20 @@ def test_pairs_captured_a_frame_apart_raise_a_pairing_alarm_once(tmp_path):
     alarms = [a for a in store.state.alarms if a.kind == "pairing_suspect"]
     assert len(alarms) == 1 and "50 ms apart" in alarms[0].message
     executor.close()
+
+
+def test_a_recording_made_by_the_app_opens_in_the_reader(tmp_path):
+    from wormspy.reader import open_recording
+    store, hub, executor, _ = _app(tmp_path, clock_drops={150, 151})
+    folder = _record(store, executor, hub, frames=160)
+    with open_recording(folder) as rec:
+        assert rec.complete and rec.warnings == []
+        assert {150, 151} <= set(rec.index)
+        assert len(rec.index) == len(rec["gcamp"]) == len(rec["bf"]) >= 160
+        assert rec["gcamp"].array().shape[1:] == (32, 48)
+        dropped = rec.frames["gcamp_dropped"].astype(bool)
+        assert dropped.sum() == 2 and not rec["gcamp"][int(dropped.idxmax())].any()
+        assert rec.frames["x_um"].notna().all()
+    store.dispatch(C.StopLive())
+    executor.wait_idle()
+    executor.close()

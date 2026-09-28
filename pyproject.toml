@@ -22,11 +22,13 @@ wormspy = "wormspy.app.main:main"
 # Spinnaker SDK into the environment (`uv pip install <spinnaker_python-*.whl>`).
 zaber = ["zaber-motion>=7"]
 gamepad = ["pygame>=2.5"]
+analysis = ["pandas>=2.1"]       # wormspy.reader: load recordings for analysis
 
 [dependency-groups]
 dev = [
     "pyqtgraph>=0.13",
     "pyside6>=6.7",
+    "pandas>=2.1",
     "pytest>=8",
     "pytest-qt>=4.4",
     "ruff>=0.6",

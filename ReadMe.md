@@ -60,6 +60,15 @@ Please cite our work if you use this project or any derivative thereof.
 4. Copy `config/rig.example.toml` to `config/rig.toml` and fill in the camera serial numbers, Zaber serial ports and, importantly, a safe Z range for your objective.
 5. Run `uv run wormspy`.
 
+### Analysing recordings:
+Recordings are plain files: a raw 16-bit TIFF per fluorescence channel, lossless FFV1 video per behaviour channel, and CSV/JSON for everything else. The format is documented in [`docs/recording-format.md`](docs/recording-format.md). To load them in Python with frames, drops, events, tracking and plate positions lined up, install the analysis extra (`uv sync --extra analysis`) and use `wormspy.reader`:
+```python
+from wormspy.reader import open_recording
+with open_recording("WormsPy_data/2026-09-28_N2-3/rec-001") as rec:
+    calcium = rec["gcamp"].array()     # (frames, height, width), memory-mapped
+    rec.frames                         # one row per frame: time, stage position, drops, tracking
+```
+
 ### Developer's notes:
 - Code lives in `src/wormspy`, tests in `tests`. Run them with `uv run pytest` and lint with `uv run ruff check`.
 - Design decisions are recorded in `docs/adr`, and the vocabulary in `CONTEXT.md`.

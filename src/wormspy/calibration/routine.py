@@ -65,15 +65,20 @@ class RigCalibration:
         mapped = dst.origin + dst.matrix @ world
         return float(mapped[0]), float(mapped[1])
 
-    def save(self, path: Path) -> None:
-        data = {"created": self.created, "reference": self.reference,
+    def to_json(self) -> dict:
+        return {"created": self.created, "reference": self.reference,
                 "registration": self.registration,
                 "cameras": {name: cal.to_json() for name, cal in self.cameras.items()}}
-        Path(path).write_text(json.dumps(data, indent=2))
+
+    def save(self, path: Path) -> None:
+        Path(path).write_text(json.dumps(self.to_json(), indent=2))
 
     @classmethod
     def load(cls, path: Path) -> "RigCalibration":
-        data = json.loads(Path(path).read_text())
+        return cls.from_json(json.loads(Path(path).read_text()))
+
+    @classmethod
+    def from_json(cls, data: dict) -> "RigCalibration":
         return cls(cameras={name: CameraCalibration.from_json(cam)
                             for name, cam in data["cameras"].items()},
                    reference=data.get("reference"),

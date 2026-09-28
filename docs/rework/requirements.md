@@ -102,7 +102,7 @@ installer are out of scope.
 5. Stage: poller, safe ranges, gamepad, Hold Focus, calibration (ADR 0002/0005/0009).
 6. Tracking: estimators and velocity servo, tuned in simulation, then on the rig (ADR 0008).
 7. PySide6 UI (ADR 0004).
-8. Reader library and format docs. Remove legacy code (done 2026-09-28) and tag `v1-legacy`
+8. Reader library and format docs (done 2026-09-28). Remove legacy code (done 2026-09-28) and tag `v1-legacy`
    (done).
 9. FLIR camera adapter and hardware start-up (done 2026-09-28). Rig verification:
    [`rig-bringup.md`](rig-bringup.md).
