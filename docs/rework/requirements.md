@@ -22,7 +22,7 @@ installer are out of scope.
 | DeepLabCut / pose tracking, body-frame setpoint | Later | Added as a plugin estimator. |
 | Software control of excitation LEDs | ❌ | Out of scope; LEDs stay manual. |
 | Drift-compensating focus (ADR 0002 mode B) | Later | Deferred. |
-| Analysis pipeline | Reader only | Reader library plus format docs. Segmentation example ported later. |
+| Analysis pipeline | Reader only | Reader library plus format docs. Segmentation example ported (`wormspy.analysis.segmentation`). |
 
 ## Hardware (reference rig)
 

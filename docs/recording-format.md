@@ -140,6 +140,12 @@ with session.open(1) as rec:                      # rec-001
     rec.plate_um("brightfield", (960, 600), rec.index[100])
 ```
 
+**Example analysis:** `python -m wormspy.analysis.segmentation <rec-NNN or session folder>
+[--overlay]` follows one bright neuron in the calcium channel and writes
+`analysis/<channel>_segmentation.csv` (one row per frame_index: centroid, brightest-pixel
+signal, local background, and the neuron's plate position) into each recording folder. It is the
+v1 `Segmentation.py`, ported; its docstring lists what changed.
+
 **Without WormsPy:**
 - **Fiji:** open `gcamp.tif` directly; it is a plain, uncompressed multi-page BigTIFF. FFV1
   `.mkv` files open through the FFmpeg-based importers, or convert with

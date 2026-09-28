@@ -51,4 +51,4 @@ filterwarnings = ["error::RuntimeWarning"]   # numeric problems (overflow, NaN c
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
-extend-exclude = ["analysis_code"]  # v1 analysis scripts, until ported (ADR 0007)
+extend-exclude = ["analysis_code"]  # remaining v1 scripts (Segmentation.py is now wormspy.analysis)
