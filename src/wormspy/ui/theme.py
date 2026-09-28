@@ -52,7 +52,7 @@ QToolTip {{ background: {RAISED}; color: {TEXT}; border: 1px solid {BORDER_STRON
 /* Cards: the title sits inside the card, with room around every edge. */
 QGroupBox {{
     background: {PANEL}; border: 1px solid {BORDER}; border-radius: 8px;
-    margin-top: 0; padding: 25px 11px 9px 11px;
+    margin-top: 0; padding: 25px 10px 9px 10px;
     font-size: 10px; font-weight: 700; letter-spacing: 1.5px;   /* the title only */
 }}
 QGroupBox::title {{
@@ -62,7 +62,7 @@ QGroupBox::title {{
 
 QPushButton {{
     background: {RAISED}; border: 1px solid {BORDER}; border-radius: 5px;
-    padding: 5px 12px; min-height: 18px;
+    padding: 5px 10px; min-height: 18px;
 }}
 QPushButton:hover {{ background: {HOVER}; border-color: {BORDER_STRONG}; }}
 QPushButton:pressed {{ background: {BORDER}; }}

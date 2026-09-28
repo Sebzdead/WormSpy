@@ -256,7 +256,7 @@ class MainWindow(QMainWindow):
         aspects = [view.aspect for view in self._views]
         h = max(60, min(width / sum(aspects), height_left))
         for view, aspect in zip(self._views, aspects, strict=True):
-            view.canvas.setFixedSize(int(h * aspect), int(h))
+            view.canvas.set_target(int(h * aspect), int(h))
 
     def _draw_overlay(self) -> None:
         overlays = self._overlay()

@@ -34,6 +34,7 @@ def _spin(lo: float, hi: float, step: float, decimals: int, suffix: str) -> QDou
     box.setDecimals(decimals)
     box.setSuffix(suffix)
     box.setKeyboardTracking(False)
+    box.setMinimumWidth(92)     # the hint is sized for the range's widest value: too wide
     return box
 
 
@@ -45,6 +46,9 @@ class CameraCard(QGroupBox):
         self._shown: CameraSettings | None = None     # the applied settings the fields show
 
         self.preset_box = QComboBox()
+        self.preset_box.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.preset_box.setMinimumContentsLength(4)
         self.preset_box.activated.connect(self._preset_chosen)
         self.save_button = QPushButton("Save as…")
         self.save_button.clicked.connect(self._ask_save)
@@ -65,7 +69,7 @@ class CameraCard(QGroupBox):
         self.apply_button.clicked.connect(self.apply)
 
         grid = QGridLayout(self)
-        grid.setHorizontalSpacing(10)
+        grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(6)
         presets = QHBoxLayout()
         presets.setSpacing(8)

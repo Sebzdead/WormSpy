@@ -77,3 +77,21 @@ def test_the_header_shows_mode_chips(qtbot):
     assert window.header.mode_chip.text() == "IDLE"
     store.dispatch(C.StartLive())
     assert window.header.mode_chip.text() == "LIVE"
+
+
+def test_the_window_can_shrink_back_after_being_large(qtbot):
+    # The feeds must not pin the window at its current size: snapping a large window to a
+    # smaller screen has to take effect, and the feeds refit at the camera aspect.
+    window, _ = _window(qtbot, width=1500, height=1000)
+    window.resize(1320, 760)
+    qtbot.wait(50)
+    assert (window.width(), window.height()) == (1320, 760)
+    for view in (window.left_view, window.right_view):
+        assert abs(_aspect(view.canvas) - 1.6) < 0.02
+    controls_bottom = window.controls.mapTo(window, window.controls.rect().bottomLeft()).y()
+    assert controls_bottom <= window.height()
+
+
+def test_the_window_fits_a_laptop_screen(qtbot):
+    window, _ = _window(qtbot)
+    assert window.minimumSizeHint().width() <= 1320     # smallest Mac laptop default: 1440

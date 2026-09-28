@@ -17,7 +17,7 @@ Display processing never touches recorded data.
 import cv2
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -48,6 +48,30 @@ def dynamic_range(dtype: np.dtype) -> tuple[float, float]:
     return 0.0, 1.0
 
 
+class FeedCanvas(pg.GraphicsLayoutWidget):
+    """The image canvas. The main window gives it a target size (the camera aspect, as large as
+    the window allows). It asks for that size but may be squeezed below it, so it never stops
+    the window from shrinking; the window then refits the target on its resize.
+
+    A fixed size would pin the window: it could not get smaller than the feeds it last fitted.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._target = QSize(320, 200)
+
+    def set_target(self, width: int, height: int) -> None:
+        self._target = QSize(width, height)
+        self.setMaximumSize(self._target)
+        self.updateGeometry()
+
+    def sizeHint(self) -> QSize:
+        return self._target
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
+
+
 class LiveView(QWidget):
     centre_requested = Signal(float, float)
 
@@ -67,7 +91,7 @@ class LiveView(QWidget):
 
         # The canvas is sized by the main window to exactly the camera's aspect ratio, so the
         # image fills it edge to edge with no letterboxing.
-        self.canvas = pg.GraphicsLayoutWidget()
+        self.canvas = FeedCanvas()
         self.canvas.setBackground(theme.FEED_BACKGROUND)
         self.canvas.ci.setContentsMargins(0, 0, 0, 0)
         self._viewbox = self.canvas.addViewBox(lockAspect=True, invertY=True)

@@ -47,24 +47,24 @@ class ControlPanel(QWidget):
         self._state = bridge.state
         layout = QHBoxLayout(self)          # one row of cards below the feeds
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         # session (and the live switch: nothing happens before the camera runs)
         session = QGroupBox("SESSION")
         grid = QGridLayout(session)
-        grid.setHorizontalSpacing(10)
+        grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(6)
         self.live_button = QPushButton("Start live")
         self.live_button.setProperty("role", "primary")
         self.live_button.clicked.connect(self._toggle_live)
         self.animal_id, self.operator, self.condition = QLineEdit(), QLineEdit(), QLineEdit()
         self.animal_id.setPlaceholderText("e.g. N2 #3")
-        for field in (self.animal_id, self.operator, self.condition):
-            field.setMinimumWidth(96)
         self.notes = QPlainTextEdit()
         self.notes.setFixedHeight(30)
         self.notes.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.notes.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        for field in (self.animal_id, self.operator, self.condition, self.notes):
+            field.setMinimumWidth(48)
         self.new_session_button = QPushButton("New session")
         self.new_session_button.clicked.connect(self._new_session)
         self.session_label = QLabel()
@@ -95,7 +95,7 @@ class ControlPanel(QWidget):
         self.recording_label.setFont(theme.mono_font())
         self.event_label = QLineEdit()
         self.event_label.setPlaceholderText("event label")
-        self.event_label.setMinimumWidth(96)
+        self.event_label.setMinimumWidth(64)
         self.mark_button = QPushButton("Mark event")
         self.mark_button.clicked.connect(
             lambda: bridge.dispatch(C.MarkEvent(label=self.event_label.text() or "marker")))
@@ -121,6 +121,9 @@ class ControlPanel(QWidget):
         self.source_box = QComboBox()
         for key, label in SOURCES:
             self.source_box.addItem(label, key)
+        for box in (self.estimator_box, self.source_box):     # may elide rather than widen
+            box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            box.setMinimumContentsLength(8)
         self.estimator_box.currentIndexChanged.connect(self._estimator_chosen)
         self.source_box.currentIndexChanged.connect(self._source_chosen)
         self.track_button = QPushButton()
@@ -131,7 +134,7 @@ class ControlPanel(QWidget):
         trk.addRow(self._muted("Camera"), self.source_box)
         trk.addRow(self.track_button)
         trk.addRow(self._muted("Status"), self.tracking_label)
-        layout.addWidget(tracking, 2)
+        layout.addWidget(tracking, 3)
 
         self.cameras = CameraCard(bridge, camera_labels)
         layout.addWidget(self.cameras, 3)
@@ -164,6 +167,10 @@ class ControlPanel(QWidget):
         stg.addLayout(calibration_row)
         stg.addStretch(1)
         layout.addWidget(stage, 2)
+
+        # status text wraps rather than widening the window
+        for label in (self.session_label, self.focus_label, self.calibration_label):
+            label.setWordWrap(True)
 
         bridge.state_changed.connect(self.render)
         self.render(bridge.state)
