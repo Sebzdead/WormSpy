@@ -60,6 +60,8 @@ Please cite our work if you use this project or any derivative thereof.
 4. Copy `config/rig.example.toml` to `config/rig.toml` and fill in the camera serial numbers, Zaber serial ports and, importantly, a safe Z range for your objective.
 5. Run `uv run wormspy`.
 
+See the [user guide](docs/user-guide.md) for calibration and running a session.
+
 ### Analysing recordings:
 Recordings are plain files: a raw 16-bit TIFF per fluorescence channel, lossless FFV1 video per behaviour channel, and CSV/JSON for everything else. The format is documented in [`docs/recording-format.md`](docs/recording-format.md). To load them in Python with frames, drops, events, tracking and plate positions lined up, install the analysis extra (`uv sync --extra analysis`) and use `wormspy.reader`:
 ```python
