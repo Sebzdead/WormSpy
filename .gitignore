@@ -1,11 +1,7 @@
 DLC_models/
 testing/
-WormSpy/backend/code/__pycache__/
 __pycache__/
 .vscode/settings.json
-WormSpy/backend/code/app_basler.py
-WormSpy/backend/code/basler_test.py
-WormSpy/backend/code/Reda_app.py
 .DS_Store
 
 # Python rework (uv)

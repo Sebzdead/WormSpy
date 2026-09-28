@@ -49,4 +49,4 @@ filterwarnings = ["error::RuntimeWarning"]   # numeric problems (overflow, NaN c
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
-extend-exclude = ["WormSpy", "analysis_code"]  # legacy v1 code, removed when the rework lands
+extend-exclude = ["analysis_code"]  # v1 analysis scripts, until ported (ADR 0007)

@@ -15,14 +15,17 @@ Example with various drosophila larvae expressing jGCaMP8f in muscle tissue cour
 ![](media/drosophila.gif)
 
 ## Features:
-WormsPy was designed for calcium imaging in head sensory and interneurons in C. elegans. However, many applications are possible by changing the filter sets and objectives and with some slight tweaks to the software.
-The basic design of WormsPy includes:
-1. Dual video feeds, brightfield and calcium imaging, but other setups are also possible
-2. Manual mode: Use a joystick to manually track animals. This is immensly helpful with acquisition to begin tracking and recording and to manually find and maintain the focus.
-3. Three tracking modes: brightfield thresholding, epifluorescent marker tracking and DeepLabCut markerless pose estimation using a pretrained CNN.
-5. Frame-synced recording: Set your desired directory and project name. When recording, the software will write the left camera as a compressed .avi file using fourcc ‘MJPG’ and the right camera as an uncompressed 16bit .tif folder to capture the maximum dynamic range of cell activity
-6. Worm Traces: Recordings also output a timestamped .csv that tracks motor position, allowing the animals path to be traced and compared with the corresponding video frames.
-7. Closed loop optogenetic stimulation: (forthcoming)
+WormsPy was designed for calcium imaging in head sensory and interneurons in C. elegans. However, many applications are possible by changing the filter sets and objectives and through its configuration.
+WormsPy 2 (this branch) is a single desktop application:
+1. Dual live feeds (behaviour and fluorescence) at the cameras' aspect ratio, with exposure histograms, fixed display levels and LUTs.
+2. Hardware-synchronised acquisition: the calcium camera is the clock and triggers the behaviour camera 1:1. Every frame is paired by frame ID, and dropped frames are recorded and flagged, never silently lost.
+3. Manual mode: a dual-stick gamepad drives XY and Z. Set/Return to Focus remembers a focal plane.
+4. Closed-loop tracking on the brightfield silhouette or on a fluorescent marker, aiming the stage at absolute positions through a velocity servo. The joystick always overrides.
+5. Automatic calibration of stage-to-image geometry for both cameras, which replaces hand-measured field-of-view constants.
+6. Recording: raw 16-bit fluorescence (BigTIFF) and lossless FFV1 behaviour video, plus a per-frame CSV (timestamps, stage position, drops) and a tracking CSV, both written as frames arrive.
+7. A simulated rig (`--sim`), so everything above can be tried without hardware.
+
+WormsPy 1 (Flask + Angular) is preserved at the `v1-legacy` tag.
 
 See the demonstration video here: https://youtu.be/mhyYDpziSE8
 
@@ -45,49 +48,22 @@ Please cite our work if you use this project or any derivative thereof.
 ```
 
 ### Minimum requirements:
-Minimum requirements to use WormSpy:
-- 2x Spinnaker compatible cameras or any cameras compatible with opencv-python
-- XY Zaber motor stage (Controlled with ASCII Commands) 
-- Z Zaber motor stage (Controlled with ASCII Commands)
-- if using DLC, a CUDA capable NVidia GPU (Preferrably with Tensor Cores)
-- any modern CPU, though Intel architectures have better performance
-- any dual stick controller compatible with PyGame
+- 2× Teledyne FLIR Spinnaker cameras (reference rig: Blackfly S BFS-U3-23S6M-C), with a GPIO cable from the clock camera's output line to the follower camera's trigger input
+- XY and Z Zaber stages (ASCII protocol; reference rig: 2× TSB60E and a VSR20A)
+- a dual-stick gamepad supported by pygame
+- Windows (the rig) or macOS/Linux (development and the simulated rig), Python 3.11+
 
 ### Getting started with WormsPy:
-1. Clone the repository, we recommend downloading the zip and extracting to desired location.
-2. We recommend using MiniConda for environment management: https://docs.anaconda.com/miniconda/miniconda-install/
-3. Add anaconda to System Path Variables
-4. Open Anaconda prompt and run `conda init`
-5. Open Anaconda prompt, cd to the WormsPy directory
-6. Run `conda create --name wormspy python=3.8.15`
-7. Run `conda activate wormspy`
-8. Run `pip install -r requirements.txt`
-9. Install the Zaber Launcher application: https://www.zaber.com/software#pos-download
-10. Set up your motor connections using ZaberLauncher, note down COM port # for your motors and maximum position index
-11. Open the file `WormsPy/backend/code/app.py` and adjust COM ports as well as other settings as needed
-12. Adjust your camera settings as desired using the camera's native software (SpinView for Teledyne cameras)
-13. Double click StartWormsPy.bat
-14. In your browser visit `localhost:5000`
-15. Enjoy WormsPy!
+1. Install [uv](https://docs.astral.sh/uv/) and clone this repository.
+2. Try the simulated rig, no hardware needed: `uv run wormspy --sim`
+3. On the rig PC, install the Spinnaker SDK and put its Python wheel into the environment: `uv sync --extra zaber --extra gamepad`, then `uv pip install spinnaker_python-<version>.whl`. The wheel ships with the SDK and must match your Python version.
+4. Copy `config/rig.example.toml` to `config/rig.toml` and fill in the camera serial numbers, Zaber serial ports and, importantly, a safe Z range for your objective.
+5. Run `uv run wormspy`.
 
-## Developer's Notes:
-More information for those interested in adapting WormSpy for their use case.
-
-### Frontend:
-The frontend of WormsPy was developed using Angular (HTML/SCSS/TS). To make adjustments the frontend, the installation of NodeJs is required. Run `npm install` in the `wormspy` folder after initially downloading the files. Adjustments to the frontend can be made in the live-feed component found in `wormspy/src/app/live-feed`. 
-
-To continue using flask as a web server and maintain `StartWormSpy.bat` as an easy launch option, follow these steps:
-1. Use `ng build --configuration production --deploy-url static/` to create new production files in the `wormspy/dist` folder. 
-2. Place the `index.html` file into the `production/template` folder. 
-3. Place all other files found in the dist folder into the `production/static` folder. Ignore assets unless those have been updated.
-<!-- 4. In the `index.html` file, edit all import statements following this template: `<src>/<href>="{{url_for('static', filename='<filename>.js')}}"` -->
-
-### Backend:
-WormSpy uses a Python Flask web server (`app.py`) to communicate with the frontend. A combination of the OpenCV and EasyPySpin libraries are used to communicate with the cameras. The Zaber Motion **ASCII** library is used to control the Zaber motors via the Zaber_messenger_router(), which is why the Zaberlauncher application must be open for WormsPy to work. There is an optional DeepLabCut (DLC) Live tracking option available. To activate, uncomment the code that loads in the pretrained model in lines #87-92. 
-
-If you would like to train and use your own DLC model, place your model in the `DLC_models` folder and replace the `skeleton` folder in the `DLCLive` function of the `video_feed` method.
-
-For more detailed programmatical information about WormSpy, refer to the inline comments found in `app.py`.  
+### Developer's notes:
+- Code lives in `src/wormspy`, tests in `tests`. Run them with `uv run pytest` and lint with `uv run ruff check`.
+- Design decisions are recorded in `docs/adr`, and the vocabulary in `CONTEXT.md`.
+- Hardware sits behind small interfaces (`Camera`, `Stage`, `Gamepad`). To support other hardware, write an adapter against those interfaces; see `src/wormspy/hardware`.
 
 ## License:
 WormSpy was developed by Sebastian Wittekindt and Lennard Wittekindt at McGill University. Funded by the Canadian Institute for Health Research.
